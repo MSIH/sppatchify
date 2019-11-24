@@ -735,6 +735,20 @@ function ChangeContent($state) {
             Write-Host "Content DB - Mount from CSV $($files.Fullname)" -Fore Yellow
             $dbs = Import-Csv $files.Fullname
             $counter = 0
+	    
+	     $i = 0
+    foreach ($db in $dbs) {
+        # Assign to SPServer
+        $mod = $i % $global:servers.count
+        $pc = $global:servers[$mod].Address
+		
+        # Collect
+        $obj = New-Object -TypeName PSObject -Prop (@{"Name" = $db.Name; "Id" = $db.Id; "UpgradePC" = $pc; "JID" = 0; "Status" = "New" })
+        $track += $obj
+        $i++
+    }
+	    
+	    
             if ($dbs) {
                 $dbs | Where-Object {
                     $name = $_.Name
