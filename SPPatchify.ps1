@@ -24,14 +24,14 @@
 
 [CmdletBinding()]
 param (
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -d -downloadMediaOnly to execute Media Download only.  No farm changes.  Prep step for real patching later.')]
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -d -downloadMedia to execute Media Download only.  No farm changes.  Prep step for real patching later.')]
     [Alias("d")]
-    [switch]$downloadMediaOnly,
+    [switch]$downloadMedia,
     [string]$downloadVersion,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -c -copyMediaOnly to copy \media\ across all peer machines.  No farm changes.  Prep step for real patching later.')]
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -c -copyMedia to copy \media\ across all peer machines.  No farm changes.  Prep step for real patching later.')]
     [Alias("c")]
-    [switch]$copyMediaOnly,
+    [switch]$copyMedia,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -v -showVersion to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
     [Alias("v")]
@@ -98,12 +98,7 @@ if ($phaseTwo) {
 if ($phaseThree) {
     $phase = "-phaseThree"
 }
-$host.ui.RawUI.WindowTitle = "SPPatchify v0.143 $phase"
-$rootCmd = $MyInvocation.MyCommand.Definition
-$root = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
-$maxattempt = 3
-$maxrebootminutes = 120
-$logFolder = "$root\log"
+
 
 #region binary EXE
 function MakeRemote($path) {
@@ -114,7 +109,7 @@ function MakeRemote($path) {
     }
     return (-join $char)
 }
-function CopyEXE($action) {
+function CopyMedia($action = "Copy") {
     Write-Host "===== $action EXE ===== $(Get-Date)" -Fore "Yellow"
 
     # Clear old session
@@ -150,7 +145,7 @@ function CopyEXE($action) {
             Get-Job | Format-Table -AutoSize
         }
         Start-Sleep 5
-        $pending = Get-Job |Where-Object {$_.State -eq "Running" -or $_.State -eq "NotStarted"}
+        $pending = Get-Job | Where-Object { $_.State -eq "Running" -or $_.State -eq "NotStarted" }
         $counter = (Get-Job).Count - $pending.Count
     }
     while ($pending)
@@ -160,12 +155,12 @@ function CopyEXE($action) {
     Write-Progress -Activity "Completed $(Get-Date)" -Completed
 }
 
-function SafetyInstallRequired() {
+function VerifyCUInstalledOnAllServers() {
     # Display server upgrade
     Write-Host "Farm Servers - Upgrade Status " -Fore "Yellow"
     (Get-SPProduct).Servers | Select-Object Servername, InstallStatus | Sort-Object Servername | Format-Table -AutoSize
 
-    $halt = (Get-SPProduct).Servers |Where-Object {$_.InstallStatus -eq "InstallRequired"}
+    $halt = (Get-SPProduct).Servers | Where-Object { $_.InstallStatus -eq "InstallRequired" }
     if ($halt) {
         $halt | Format-Table -AutoSize
         Write-Host "HALT - MEDIA ERROR - Install on servers" -Fore Red
@@ -197,8 +192,8 @@ function SafetyEXE() {
     }
 }
 
-function RunEXE() {
-    Write-Host "===== RunEXE ===== $(Get-Date)" -Fore "Yellow"
+function RunAndInstallCU() {
+    Write-Host "===== RunAndInstallCU ===== $(Get-Date)" -Fore "Yellow"
 
     # Remove MSPLOG
     LoopRemoteCmd "Remove MSPLOG on " "Remove-Item '$logfolder\msp\*MSPLOG*' -Confirm:`$false -ErrorAction SilentlyContinue"
@@ -578,8 +573,8 @@ function LoopRemoteCmd($msg, $cmd) {
     Write-Progress -Activity "Completed $(Get-Date)" -Completed
 }
 
-function ChangeDC() {
-    Write-Host "===== ChangeDC OFF ===== $(Get-Date)" -Fore "Yellow"
+function StopSPDistributedCache() {
+    Write-Host "===== StopSPDistributedCache OFF ===== $(Get-Date)" -Fore "Yellow"
 
     # Distributed Cache
     $sb = {
@@ -590,7 +585,7 @@ function ChangeDC() {
             $counter = 0
             $maxLoops = 60
 
-            $cache = Get-CacheHost |Where-Object {$_.HostName -eq $computer}
+            $cache = Get-CacheHost | Where-Object { $_.HostName -eq $computer }
             if ($cache) {
                 do {
                     try {
@@ -695,6 +690,20 @@ function RunConfigWizard() {
     }
     LoopRemoteCmd "Run Config Wizard on " @($shared, $wiz)
 }
+function DismountContentDatabase() {
+    ChangeContent $false
+}
+
+function MountContentDatabase() {
+    ChangeContent $true
+}
+
+function ReportContentDatabases() {
+    $dbs = Get-SPContentDatabase
+    if ($dbs) {
+        $dbs | ForEach-Object { $wa = $_.WebApplication.Url; $_ | Select-Object Name, NormalizedDataSource, @{n = "WebApp"; e = { $wa } } } | Export-Csv "$logFolder\contentdbs-$when.csv" -NoTypeInformation
+    }
+}
 
 function ChangeContent($state) {
     Write-Host "===== ContentDB $state ===== $(Get-Date)" -Fore "Yellow"
@@ -707,7 +716,7 @@ function ChangeContent($state) {
         # Remove content
         $dbs = Get-SPContentDatabase
         if ($dbs) {
-            $dbs | ForEach-Object {$wa = $_.WebApplication.Url; $_ | Select-Object Name, NormalizedDataSource, @{n = "WebApp"; e = {$wa}}} | Export-Csv "$logFolder\contentdbs-$when.csv" -NoTypeInformation
+            $dbs | ForEach-Object { $wa = $_.WebApplication.Url; $_ | Select-Object Name, NormalizedDataSource, @{n = "WebApp"; e = { $wa } } } | Export-Csv "$logFolder\contentdbs-$when.csv" -NoTypeInformation
             $dbs | ForEach-Object {
                 "$($_.Name),$($_.NormalizedDataSource)"
                 Dismount-SPContentDatabase $_ -Confirm:$false
@@ -825,7 +834,7 @@ function DisplayCA() {
     $sb = {
         Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null;
         $ver = (Get-SPFarm).BuildVersion.Major;
-        [System.Diagnostics.FileVersionInfo]::GetVersionInfo("C:\Program Files\Common Files\microsoft shared\Web Server Extensions\$ver\ISAPI\Microsoft.SharePoint.dll") | Select-Object FileVersion, @{N = 'PC'; E = {$env:computername}}
+        [System.Diagnostics.FileVersionInfo]::GetVersionInfo("C:\Program Files\Common Files\microsoft shared\Web Server Extensions\$ver\ISAPI\Microsoft.SharePoint.dll") | Select-Object FileVersion, @{N = 'PC'; E = { $env:computername } }
     }
     LoopRemoteCmd "Get file version on " $sb
 	
@@ -833,9 +842,9 @@ function DisplayCA() {
     ShowVersion
 	
     # Open Central Admin
-    $ca = (Get-SPWebApplication -IncludeCentralAdministration) | Where-Object {$_.IsAdministrationWebApplication -eq $true}
+    $ca = (Get-SPWebApplication -IncludeCentralAdministration) | Where-Object { $_.IsAdministrationWebApplication -eq $true }
     $pages = @("PatchStatus.aspx", "UpgradeStatus.aspx", "FarmServers.aspx")
-    $pages | ForEach-Object {Start-Process ($ca.Url + "_admin/" + $_)}
+    $pages | ForEach-Object { Start-Process ($ca.Url + "_admin/" + $_) }
 }
 function ShowVersion() {
     # Version Max Patch
@@ -866,7 +875,7 @@ function ShowVersion() {
             $remoteRoot = "\\$addr\"
             $remoteRoot += MakeRemote $root
             $status = (Get-Content "$remoteRoot\status.html" -ErrorAction SilentlyContinue)[1];
-            $coll += @{"Server" = $addr; "Status" = $status}
+            $coll += @{"Server" = $addr; "Status" = $status }
         }
         catch {
             # Suppress any error
@@ -912,7 +921,7 @@ function IISStart() {
 
         # W3WP
         Start-Service w3svc | Out-Null
-        Get-ChildItem "IIS:\AppPools\" | ForEach-Object {$n = $_.Name; Start-WebAppPool $n | Out-Null}
+        Get-ChildItem "IIS:\AppPools\" | ForEach-Object { $n = $_.Name; Start-WebAppPool $n | Out-Null }
         Get-WebSite | Start-WebSite | Out-Null
     }
     LoopRemoteCmd "Start IIS on " $sb
@@ -945,7 +954,7 @@ function UpgradeContent() {
         $pc = $global:servers[$mod].Address
 		
         # Collect
-        $obj = New-Object -TypeName PSObject -Prop (@{"Name" = $db.Name; "Id" = $db.Id; "UpgradePC" = $pc; "JID" = 0; "Status" = "New"})
+        $obj = New-Object -TypeName PSObject -Prop (@{"Name" = $db.Name; "Id" = $db.Id; "UpgradePC" = $pc; "JID" = 0; "Status" = "New" })
         $track += $obj
         $i++
     }
@@ -978,7 +987,7 @@ function UpgradeContent() {
     # Monitor and Run loop
     do {
         # Get latest PID status
-        $active = $track |Where-Object {$_.Status -eq "InProgress"}
+        $active = $track | Where-Object { $_.Status -eq "InProgress" }
         foreach ($db in $active) {
             # Monitor remote server job
             if ($db.JID) {
@@ -1000,11 +1009,11 @@ function UpgradeContent() {
         # Ensure workers are active
         foreach ($server in $global:servers) {
             # Count active workers per server
-            $active = $track |Where-Object {$_.Status -eq "InProgress" -and $_.UpgradePC -eq $server.Address}
+            $active = $track | Where-Object { $_.Status -eq "InProgress" -and $_.UpgradePC -eq $server.Address }
             if ($active.count -lt $maxWorkers) {
 			
                 # Choose next available DB
-                $avail = $track |Where-Object {$_.Status -eq "New" -and $_.UpgradePC -eq $server.Address}
+                $avail = $track | Where-Object { $_.Status -eq "New" -and $_.UpgradePC -eq $server.Address }
                 if ($avail) {
                     if ($avail -is [array]) {
                         $row = $avail[0]
@@ -1027,7 +1036,7 @@ function UpgradeContent() {
                     $pc = $server.Address
                     Write-Host $pc -Fore "Green"
                     Get-PSSession | Format-Table -AutoSize
-                    $session = Get-PSSession |Where-Object {$_.ComputerName -like "$pc*"}
+                    $session = Get-PSSession | Where-Object { $_.ComputerName -like "$pc*" }
                     if (!$session) {
                         # Dynamic open PSSession
                         if ($remoteSessionPort -and $remoteSessionSSL) {
@@ -1051,7 +1060,7 @@ function UpgradeContent() {
                 }
 				
                 # Progress
-                $counter = ($track |Where-Object {$_.Status -eq "Completed"}).Count
+                $counter = ($track | Where-Object { $_.Status -eq "Completed" }).Count
                 $prct = 0
                 if ($track) {
                     $prct = [Math]::Round(($counter / $track.Count) * 100)
@@ -1064,7 +1073,7 @@ function UpgradeContent() {
         }
 
         # Latest counter
-        $remain = $track |Where-Object {$_.status -ne "Completed" -and $_.status -ne "Failed"}
+        $remain = $track | Where-Object { $_.status -ne "Completed" -and $_.status -ne "Failed" }
     }
     while ($remain)
     Write-Host "===== Upgrade Content Databases DONE ===== $(Get-Date)"
@@ -1081,8 +1090,8 @@ function UpgradeContent() {
 
 function ShowMenu($prod) {
     # Choices
-    $csv = Import-Csv "$root\SPPatchify-Download-CU.csv" | Select-Object -Property @{n = 'MonthInt'; e = {[int]$_.Month}}, *
-    $choices = $csv |Where-Object {$_.Product -eq $prod} | Sort-Object Year, MonthInt -Desc | Select-Object Year, Month -Unique
+    $csv = Import-Csv "$root\SPPatchify-Download-CU.csv" | Select-Object -Property @{n = 'MonthInt'; e = { [int]$_.Month } }, *
+    $choices = $csv | Where-Object { $_.Product -eq $prod } | Sort-Object Year, MonthInt -Desc | Select-Object Year, Month -Unique
 
     # Menu
     Write-Host "Download CU Media to \media\ - $prod" -Fore "Yellow"
@@ -1134,7 +1143,7 @@ function GetMonthInt($name) {
             return $_
         }
     }
-    if (!$found) {return $name}
+    if (!$found) { return $name }
 }
 function PatchRemoval() {
     # Remove patch media
@@ -1179,7 +1188,7 @@ function PatchMenu() {
         $farm = Get-SPFarm -ErrorAction SilentlyContinue
         if ($farm) {
             $ver = $farm.BuildVersion.Major
-            $sppl = (Get-SPProduct -Local) |Where-Object {$_.ProductName -like "*Microsoft Project*"}
+            $sppl = (Get-SPProduct -Local) | Where-Object { $_.ProductName -like "*Microsoft Project*" }
             if ($sppl) {
                 if ($ver -ne 16) {
                     $sku = "PROJ"
@@ -1205,7 +1214,7 @@ function PatchMenu() {
     $year = $global:selmonth.Split(" ")[1]
     $month = GetMonthInt $global:selmonth.Split(" ")[0]
     Write-Host "$year-$month-$sku$ver"
-    $patchFiles = $csv |Where-Object {$_.Year -eq $year -and $_.Month -eq $month -and $_.Product -eq "$sku$ver"}
+    $patchFiles = $csv | Where-Object { $_.Year -eq $year -and $_.Month -eq $month -and $_.Product -eq "$sku$ver" }
     $patchFiles | Format-Table -Auto
 	
     # Download patch files
@@ -1273,7 +1282,7 @@ function DetectAdmin() {
 
 function SaveServiceInst() {
     # Save config to CSV
-    $sos = Get-SPServiceInstance |Where-Object {$_.Status -eq "Online"} | Select-Object Id, TypeName, @{n = "Server"; e = {$_.Server.Address}}
+    $sos = Get-SPServiceInstance | Where-Object { $_.Status -eq "Online" } | Select-Object Id, TypeName, @{n = "Server"; e = { $_.Server.Address } }
     $sos | Export-Csv "$logFolder\sos-before-$when.csv" -Force -NoTypeInformation
 }
 
@@ -1511,26 +1520,17 @@ function VerifyWMIUptime() {
             # Reboot all
             Get-PSSession | Format-Table -Auto
             Write-Host "Rebooting above servers ... "
-            $sb = {Restart-Computer -Force}
+            $sb = { Restart-Computer -Force }
             Invoke-Command -ScriptBlock $sb -Session (Get-PSSession)
         }
     }
 }
 
-function MountContentDatabases() {
-    $csv = Import-Csv $mount
-    foreach ($row in $csv) {
-        # Mount CDB
-        Write-Host "Mount " $row.Name ","  $row.NormalizedDataSource  "," $row.WebApp -Fore "Yellow"
-        $wa = Get-SPWebApplication $row.WebApp
-        Mount-SPContentDatabase -WebApplication $wa -Name $row.Name -DatabaseServer $row.NormalizedDataSource
-    }
-}
 
 function AppOffline ($state) {
     # Deploy App_Offline.ht to peer IIS instances across the farm
     $ao = "app_offline.htm"
-    $folders = Get-SPWebApplication | ForEach-Object {$_.IIsSettings[0].Path.FullName}
+    $folders = Get-SPWebApplication | ForEach-Object { $_.IIsSettings[0].Path.FullName }
     # Start Jobs
     foreach ($server in $global:servers) {
         $addr = $server.Address
@@ -1557,19 +1557,55 @@ function AppOffline ($state) {
     }
 }
 
+
+$host.ui.RawUI.WindowTitle = "SPPatchify v0.143 $phase"
+$rootCmd = $MyInvocation.MyCommand.Definition
+$root = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
+$maxattempt = 3
+$maxrebootminutes = 120
+$logFolder = "$root\log"
+
 function Main() {
     # Clean up
     Get-PSSession | Remove-PSSession -Confirm:$false
 
     # Local farm servers
-    $global:servers = Get-SPServer |Where-Object {$_.Role -ne "Invalid"} | Sort-Object Address
+    $global:servers = Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
     $remoteRoot = MakeRemote $root
 
     # List - Target servers
     if ($targetServers) {
-        $global:servers = Get-SPServer |Where-Object {$targetServers -contains $_.Name} | Sort-Object Address
+        $global:servers = Get-SPServer | Where-Object { $targetServers -contains $_.Name } | Sort-Object Address
     }
-    Write-Host "Servers Online: $($global:servers.Count)"
+
+    # Halt if no servers detected
+    if (($global:servers).Count -eq 0) {
+        Write-Host "HALT - POWERSHELL ERROR - No SharePoint servers detected.  Close this window and run from new window." -Fore Red
+        Exit        
+    }
+    else {
+        Write-Host "Servers Online: $($global:servers.Count)"   
+    }   
+    
+
+    # Start LOG
+    $start = Get-Date
+    $when = $start.ToString("yyyy-MM-dd-hh-mm-ss")
+    $logFile = "$logFolder\SPPatchify-$when.txt"
+    mkdir "$logFolder" -ErrorAction SilentlyContinue | Out-Null
+    mkdir "$logFolder\msp" -ErrorAction SilentlyContinue | Out-Null
+    Start-Transcript $logFile
+
+    # Version
+    "SPPatchify version 0.143 last modified 02-10-2019"
+	
+    # Parameters
+    $msg = "=== PARAMS === $(Get-Date)"
+    $msg +=	"download = $downloadMedia"
+    $msg +=	"copy = $copyMedia"
+    $msg +=	"version = $showVersion"
+    $msg +=	"phaseTwo = $phaseTwo"
+    Write-Host "Content Databases Online: $((Get-SPContentDatabase).Count)"
 
     # Save Service Instance
     if ($saveServiceInstance) {
@@ -1591,10 +1627,9 @@ function Main() {
     }
 
     # Download media
-    if ($downloadMediaOnly) {
+    if ($downloadMedia) {
         PatchRemoval
-        PatchMenu
-        Exit
+        PatchMenu        
     }
 	
     # Display version
@@ -1602,10 +1637,10 @@ function Main() {
         ShowVersion
         Exit
     }
-
+ 
     # Mount Databases
-    if ($mount) {
-        MountContentDatabases
+    if ($ReportContentDatabases) {
+        ReportContentDatabases
         Exit
     }
 
@@ -1619,6 +1654,16 @@ function Main() {
         Exit
     }
 
+    # Change Services
+    if ($StartSharePointRelatedServices) {
+        changeServices $true
+        Exit
+    }
+    if ($StopSharePointRelatedServices) {
+        changeServices $false
+        Exit
+    }
+
     # Install App_Offline
     if ($appOffline.ToUpper() -eq "TRUE") {
         AppOffline $true
@@ -1627,32 +1672,8 @@ function Main() {
     if ($appOffline.ToUpper() -eq "FALSE") {
         AppOffline $false
         Exit
-    }
-	
-    # Start LOG
-    $start = Get-Date
-    $when = $start.ToString("yyyy-MM-dd-hh-mm-ss")
-    $logFile = "$logFolder\SPPatchify-$when.txt"
-    mkdir "$logFolder" -ErrorAction SilentlyContinue | Out-Null
-    mkdir "$logFolder\msp" -ErrorAction SilentlyContinue | Out-Null
-    Start-Transcript $logFile
+    }	
 
-    # Version
-    "SPPatchify version 0.143 last modified 02-10-2019"
-	
-    # Parameters
-    $msg = "=== PARAMS === $(Get-Date)"
-    $msg +=	"download = $downloadMediaOnly"
-    $msg +=	"copy = $copyMediaOnly"
-    $msg +=	"version = $showVersion"
-    $msg +=	"phaseTwo = $phaseTwo"
-    Write-Host "Content Databases Online: $((Get-SPContentDatabase).Count)"
-
-    # Halt if no servers detected
-    if (($global:servers).Count -eq 0) {
-        Write-Host "HALT - POWERSHELL ERROR - No SharePoint servers detected.  Close this window and run from new window." -Fore Red
-        Exit        
-    }
     
     # Read IIS Password
     ReadIISPW
@@ -1669,33 +1690,112 @@ function Main() {
     LoopRemoteCmd "Create log directory on" "mkdir '$logFolder' -ErrorAction SilentlyContinue | Out-Null"
     LoopRemoteCmd "Create log directory on" "mkdir '$logFolder\msp' -ErrorAction SilentlyContinue | Out-Null"
 
+    if ($copyMedia) {   
+        # Copy media only (switch -C)  
+        # does not require remoting, use unc path    
+        CopyMedia "Copy"
+    }
+   
+    if ($EnablePSRemoting) {  
+        # Enable CredSSP remoting      
+        EnablePSRemoting
+    }
+    
+    if ($ClearCacheIni) {  
+        # Cler the Cache INI Folder 
+        # does not require remoting, use unc path     
+        ClearCacheIni
+    }
+    
+    if ($SafetyEXE) { 
+        # check if SP2013 media is three files  
+        # does not require remoting, use unc path     
+        SafetyEXE
+    }
+    
+    if ($SaveServiceInst) { 
+        # Save SP Service Instances that are online to CVS file  
+        # does not require remoting    
+        SaveServiceInst
+    }
+    
+    if ($StopSPDistributedCache) { 
+        # Stop StopSPDistributedCache on all farm servers  
+        # uses CredSSP remoting    
+        StopSPDistributedCache
+    }
+    
+    if ($IISStart) {   
+        # Start IIS App Pools, Sites, IIS Admin service, and Web service
+        # uses CredSSP remoting    
+        IISStart
+    }
+
+    # Run CU, wait for servers to reboot, verify installed on all servers
+    if ($RunAndInstallCU) {   
+        # create scheduled task to run CU
+        # watch and update web page
+        # uses CredSSP remoting    
+        RunAndInstallCU
+        WaitReboot
+        VerifyCUInstalledOnAllServers        
+    } 
+
+    if ($DismountContentDatabase) {   
+        # Run PSconfigure on all servers
+        # does not require remoting     
+        DismountContentDatabase
+    } 
+
+
+    if ($RunConfigWizard) {   
+        # Run PSconfigure on all servers
+        # uses CredSSP remoting    
+        RunConfigWizard
+    } 
+
+    if ($MountContentDatabase) {  
+        # Run PSconfigure on all servers
+        # does not require remoting      
+        MountContentDatabase
+    } 
+
+      if ($UpgradeContent) {  
+        # Run PSconfigure on all servers
+        # does not require remoting      
+        UpgradeContent
+    } 
+
+
+
+
     # Core steps
     if (!$phaseTwo -and !$phaseThree) {
-        if ($copyMediaOnly) {
+        if ($copyMedia) {
             # Copy media only (switch -C)
-            CopyEXE "Copy"
+            CopyMedia "Copy"
         }
         else {
             # Phase One - Binary EXE.  Quick mode EXE only.
             if ($quick) {
-                RunEXE
+                RunAndInstallCU
                 WaitReboot
             }
             else {
                 PatchMenu
                 EnablePSRemoting
                 ClearCacheIni
-                CopyEXE "Copy"
+                CopyMedia "Copy"
                 SafetyEXE
                 SaveServiceInst
                 ChangeServices $true
                 if (!$skipProductLocal) {
                     ProductLocal
                 }
-                ChangeDC
+                StopSPDistributedCache
                 ChangeServices $false
                 IISStart
-                RunEXE
+                RunAndInstallCU
                 WaitReboot
             }
             if (!$skipProductLocal) {
@@ -1709,7 +1809,7 @@ function Main() {
     }
     # Phase Two - SP Config Wizard
     if ($phaseTwo) {
-        SafetyInstallRequired
+        VerifyCUInstalledOnAllServers
         DetectAdmin
         if (!$onlineContent) {
             ChangeContent $false
