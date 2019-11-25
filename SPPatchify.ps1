@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
 	SharePoint Central Admin - View active services across entire farm. No more select machine drop down dance!
 .DESCRIPTION
@@ -713,7 +713,7 @@ function ChangeContent($state) {
     Write-Host "Content Databases Online: $c"
 
     if (!$state) {
-        # Remove content
+        # Remove content database
         $dbs = Get-SPContentDatabase
         if ($dbs) {
             $dbs | ForEach-Object { $wa = $_.WebApplication.Url; $_ | Select-Object Name, NormalizedDataSource, @{n = "WebApp"; e = { $wa } } } | Export-Csv "$logFolder\contentdbs-$when.csv" -NoTypeInformation
@@ -724,7 +724,21 @@ function ChangeContent($state) {
         }
     }
     else {
-        # Add content
+        # Add/Mount content database
+        # get newest file
+        # get database from file
+        # loop thru servers
+        # run mount command
+        # when job completes, run another mount command
+
+        
+        $sb = {
+            Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
+            Get-SPProduct -Local
+        }
+        
+
+
         $files = Get-ChildItem "$logFolder\contentdbs-*.csv" | Sort-Object LastAccessTime -Desc
         if ($files -is [Array]) {
             $files = $files[0]
@@ -736,37 +750,42 @@ function ChangeContent($state) {
             $dbs = Import-Csv $files.Fullname
             $counter = 0
 	    
-	     $i = 0
-    foreach ($db in $dbs) {
-        # Assign to SPServer
-        $mod = $i % $global:servers.count
-        $pc = $global:servers[$mod].Address
-		
-        # Collect
-        $obj = New-Object -TypeName PSObject -Prop (@{"Name" = $db.Name; "Id" = $db.Id; "UpgradePC" = $pc; "JID" = 0; "Status" = "New" })
-        $track += $obj
-        $i++
-    }
+            $i = 0
+            foreach ($db in $dbs) {
+                # Assign to SPServer
+                $mod = $i % $global:servers.count
+                $pc = $global:servers[$mod].Address
+        
+                $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($db.WebApp)
+                if ($wa) {
+                    Mount-SPContentDatabase -WebApplication $wa -Name $name -DatabaseServer $db.NormalizedDataSource | Out-Null
+                }
+
+            
+                $i++
+                # Progress
+                $prct = [Math]::Round(($counter / $dbs.Count) * 100)
+                if ($prct) {
+                    Write-Progress -Activity "Add database" -Status "$name ($prct %) $(Get-Date)" -PercentComplete $prct
+                }
+                $counter++
+
+            }
 	    
-	    
+            <#
             if ($dbs) {
                 $dbs | Where-Object {
                     $name = $_.Name
                     $name
 
-                    # Progress
-                    $prct = [Math]::Round(($counter / $dbs.Count) * 100)
-                    if ($prct) {
-                        Write-Progress -Activity "Add database" -Status "$name ($prct %) $(Get-Date)" -PercentComplete $prct
-                    }
-                    $counter++
-
+                   
                     $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($_.WebApp)
                     if ($wa) {
                         Mount-SPContentDatabase -WebApplication $wa -Name $name -DatabaseServer $_.NormalizedDataSource | Out-Null
                     }
                 }
             }
+            #>
         }
         else {
             Write-Host "Content DB - CSV not found" -Fore Yellow
@@ -958,7 +977,7 @@ function UpgradeContent() {
     Write-Host "===== Upgrade Content Databases ===== $(Get-Date)" -Fore "Yellow"
 	
     # Tracking table - assign DB to server
-    $maxWorkers = 4
+    $maxWorkmaxWorkersers = 4
     $track = @()
     $dbs = Get-SPContentDatabase
     $i = 0
@@ -1774,7 +1793,7 @@ function Main() {
         MountContentDatabase
     } 
 
-      if ($UpgradeContent) {  
+    if ($UpgradeContent) {  
         # Run PSconfigure on all servers
         # does not require remoting      
         UpgradeContent
