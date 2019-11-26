@@ -29,9 +29,9 @@ param (
     [switch]$downloadMedia,
     [string]$downloadVersion,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -c -copyMedia to copy \media\ across all peer machines.  No farm changes.  Prep step for real patching later.')]
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -c -CopyMedia to copy \media\ across all peer machines.  No farm changes.  Prep step for real patching later.')]
     [Alias("c")]
-    [switch]$copyMedia,
+    [switch]$CopyMedia,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -v -showVersion to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
     [Alias("v")]
@@ -84,20 +84,49 @@ param (
     [string]$changeServices,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -saveServiceInstance to snapshot CSV with current Service Instances running.')]
-    [switch]$saveServiceInstance
+    [switch]$saveServiceInstance,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -reportContentDatabases to snapshot CSV with Content Databases.')]
+    [switch]$ReportContentDatabases,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -startSharePointRelatedServices to start sharepoint and iis services.')]
+    [switch]$startSharePointRelatedServices,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -stopSharePointRelatedServices to stop sharepoint and iis services.')]
+    [switch]$stopSharePointRelatedServices,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -EnablePSRemoting to enable CredSSP.')]
+    [switch]$EnablePSRemoting,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -ClearCacheIni to clear chache ini folder.')]
+    [switch]$ClearCacheIni,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -StopSPDistributedCache to stop sharepoint and iis services.')]
+    [switch]$StopSPDistributedCache,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -IISStart to stop sharepoint and iis services.')]
+    [switch]$IISStart,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -RunAndInstallCU to stop sharepoint and iis services.')]
+    [switch]$RunAndInstallCU,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -DismountContentDatabase to stop sharepoint and iis services.')]
+    [switch]$DismountContentDatabase,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -RunConfigWizard to stop sharepoint and iis services.')]
+    [switch]$RunConfigWizard,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -MountContentDatabase to stop sharepoint and iis services.')]
+    [switch]$MountContentDatabase,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -UpgradeContent to stop sharepoint and iis services.')]
+    [switch]$UpgradeContent
+
 )
 
 # Plugin
 Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
 Import-Module WebAdministration -ErrorAction SilentlyContinue | Out-Null
-
-# Version
-if ($phaseTwo) {
-    $phase = "-phaseTwo"
-}
-if ($phaseThree) {
-    $phase = "-phaseThree"
-}
 
 
 #region binary EXE
@@ -506,6 +535,22 @@ function LoopRemotePatch($msg, $cmd, $params) {
     }
     Write-Progress -Activity "Completed $(Get-Date)" -Completed	
 }
+
+function OpenRemotePSSession() {
+    if ($remoteSessionPort -and $remoteSessionSSL) {
+        $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+    }
+    elseif ($remoteSessionPort) {
+        $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
+    }
+    elseif ($remoteSessionSSL) {
+        $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
+    }
+    else {
+        $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
+    }
+    return $remote
+}
 function LoopRemoteCmd($msg, $cmd) {
     if (!$cmd) {
         return
@@ -705,6 +750,95 @@ function ReportContentDatabases() {
     }
 }
 
+function DistributedJobs($tasks, $servers, $maxJobs = 1) {
+    if (!$servers) {
+        $servers = $global:servers
+    }
+
+    # create script block based on saved content database
+    $files = Get-ChildItem "$logFolder\contentdbs-*.csv" | Sort-Object LastAccessTime -Desc
+    if ($files -is [Array]) {
+        $files = $files[0]
+    }
+
+    # Loop databases and create script block
+    if ($files) {
+        Write-Host "Content DB - from CSV $($files.Fullname)" -Fore Yellow
+        $dbs = Import-Csv $files.Fullname  
+        Write-Host "Content DB - create script blocks" -Fore Yellow      
+        foreach ($db in $dbs) {  
+            $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($db.WebApp)
+            if ($wa) {          
+                $sb += @{
+                    "scriptBlock" = { 
+                        Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null                    
+                        Mount-SPContentDatabase -WebApplication $wa -Name $name -DatabaseServer $db.NormalizedDataSource | Out-Null };
+                    "dataBase"    = $name 
+                }
+            }
+        }
+    }
+
+    # create
+    $tasks = $sb
+    $counter = 0
+    foreach ($task in $tasks) {
+
+        $running = @(Get-Job | Where-Object { $_.State -eq "Running" -or $_.State -eq "NotStarted" })
+        $wait = $true
+        foreach ($server in $servers) {
+            if ( $maxJobs -gt $running.Location | Where-Object { $_ -eq $server.Address } )            { 
+                $wait = $False 
+            }
+        }
+
+        if ($wait) {
+            $running | Wait-Job -Any | Out-Null
+        }
+
+        $AvaialableServers = $servers.Address | Where-Object { -not ($running.Location -contains $_) }
+        $server = $AvaialableServers[0]
+
+        Write-Host "Starting job for $server"
+        $session = Get-PSSession | Where-Object { $_.ComputerName -like "$server" }
+        if (!$session) {
+            # Dynamic open PSSession
+            if ($remoteSessionPort -and $remoteSessionSSL) {
+                $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+            }
+            elseif ($remoteSessionPort) {
+                $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
+            }
+            elseif ($remoteSessionSSL) {
+                $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
+            }
+            else {
+                $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
+            }
+        }
+        Write-Host "Content DB - Mount Database" -Fore Yellow
+        Invoke-Command $task.scriptBlock -Session $session -AsJob
+         
+        # Progress
+        $prct = [Math]::Round(($counter / $tasks.Count) * 100)
+        if ($prct) {
+            Write-Progress -Activity "Add database" -Status "$($task.name) ($prct %) $(Get-Date)" -PercentComplete $prct
+        }
+        $counter++
+    }
+
+    # Wait for all jobs to complete and results ready to be received
+    Wait-Job * | Out-Null
+
+    # Process the results
+    foreach ($job in Get-Job) {
+        $result = Receive-Job $job
+        Write-Host $result
+    }
+    Remove-Job -State Completed
+}
+
+
 function ChangeContent($state) {
     Write-Host "===== ContentDB $state ===== $(Get-Date)" -Fore "Yellow"
     # Display
@@ -732,10 +866,7 @@ function ChangeContent($state) {
         # when job completes, run another mount command
 
         
-        $sb = {
-            Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
-            Get-SPProduct -Local
-        }
+        
         
 
 
@@ -1630,7 +1761,7 @@ function Main() {
     Start-Transcript $logFile
 
     # Version
-    "SPPatchify version 0.143 last modified 02-10-2019"
+    #"SPPatchify version 0.143 last modified 02-10-2019"
 	
     # Parameters
     $msg = "=== PARAMS === $(Get-Date)"
@@ -1672,7 +1803,7 @@ function Main() {
     }
  
     # Mount Databases
-    if ($ReportContentDatabases) {
+    if ($reportContentDatabases) {
         ReportContentDatabases
         Exit
     }
@@ -1688,11 +1819,11 @@ function Main() {
     }
 
     # Change Services
-    if ($StartSharePointRelatedServices) {
+    if ($startSharePointRelatedServices) {
         changeServices $true
         Exit
     }
-    if ($StopSharePointRelatedServices) {
+    if ($stopSharePointRelatedServices) {
         changeServices $false
         Exit
     }
@@ -1723,7 +1854,7 @@ function Main() {
     LoopRemoteCmd "Create log directory on" "mkdir '$logFolder' -ErrorAction SilentlyContinue | Out-Null"
     LoopRemoteCmd "Create log directory on" "mkdir '$logFolder\msp' -ErrorAction SilentlyContinue | Out-Null"
 
-    if ($copyMedia) {   
+    if ($CopyMedia) {   
         # Copy media only (switch -C)  
         # does not require remoting, use unc path    
         CopyMedia "Copy"
