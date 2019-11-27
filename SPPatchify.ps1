@@ -440,6 +440,11 @@ function LaunchPhaseThree() {
     # Launch script in new windows for Phase Three - Add Content
     Start-Process "powershell.exe" -ArgumentList "$root\SPPatchify.ps1 -phaseThree"
 }
+
+<# function LaunchPhaseThree() {
+    Start-Process "powershell.exe" -ArgumentList "$scriptFile -phaseThree"
+} #>
+
 function CalcDuration() {
     Write-Host "===== DONE ===== $(Get-Date)" -Fore "Yellow"
     $totalHours = [Math]::Round(((Get-Date) - $start).TotalHours, 2)
@@ -536,20 +541,20 @@ function LoopRemotePatch($msg, $cmd, $params) {
     Write-Progress -Activity "Completed $(Get-Date)" -Completed	
 }
 
-function OpenRemotePSSession($server) {
+function OpenRemotePSSession($server, $credentials) {
     $session = Get-PSSession | Where-Object { $_.ComputerName -eq $server }
-    if (!$session) {
+    if (!$session) {        
         if ($remoteSessionPort -and $remoteSessionSSL) {
-            $session = New-PSSession -ComputerName server -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+            $session = New-PSSession -ComputerName server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
         }
         elseif ($remoteSessionPort) {
-            $session = New-PSSession -ComputerName server -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
+            $session = New-PSSession -ComputerName server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort
         }
         elseif ($remoteSessionSSL) {
-            $session = New-PSSession -ComputerName server -Credential $global:cred -Authentication Credssp -UseSSL
+            $session = New-PSSession -ComputerName server -Credential $credentials -Authentication Credssp -UseSSL
         }
         else {
-            $session = New-PSSession -ComputerName server -Credential $global:cred -Authentication Credssp
+            $session = New-PSSession -ComputerName server -Credential $credentials -Authentication Credssp
         }
     }
     return $session
@@ -783,8 +788,10 @@ function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJ
         }  
 
         Write-Host "Starting job for $avaialableServer"
-        $session = OpenRemotePSSession $avaialableServer       
-        Invoke-Command -ScriptBlock $scriptBlock -Session $session -AsJob 
+        $session = OpenRemotePSSession $avaialableServer GetFarmAccountCredentials    
+        if ($session) {
+            Invoke-Command -ScriptBlock $scriptBlock -Session $session -AsJob 
+        }
         
         # Progress
         $prct = [Math]::Round(($counter / $scriptBlocks.Count) * 100)
@@ -874,7 +881,43 @@ function EnablePSRemoting() {
 
 }
 
+function GetFarmAccount() {
+    return (Get-SPFarm).DefaultServiceAccount.Name
+}
+function GetFarmAccountCredentials() {
+    $farmAccount = GetFarmAccount
+    $farmAccountPassword = GetFarmAccountPassword
+
+    if ($farmAccount -and $farmAccountPassword ) {
+        $securePassword = $farmAccountPassword | ConvertTo-SecureString -AsPlainText -Force
+        $PSCredential = New-Object System.Management.Automation.PSCredential -ArgumentList $farmAccount, $securePassword
+    }    
+    
+    return $PSCredential 
+     
+}
+
+Function GetFarmAccountPassword() {    
+    $farmAccount = GetFarmAccount
+    foreach ( $server in (Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address)) {
+        $accounts = Get-WmiObject -ComputerName $server -Namespace "root\MicrosoftIISV2" -Class "IIsApplicationPoolSetting" -Authentication PacketPrivacy | Select-Object WAMUserName, WAMUserPass
+        #Read more: https://www.sharepointdiary.com/2012/01/how-to-retrieve-iis-application-pool-password.html#ixzz66TX81K00
+        
+        foreach ($account in $accounts) {
+            if ($account.WAMUserName -eq $farmAccount) {
+                $password = $account.WAMUserPass 
+                break
+            }            
+        }  
+        if ($password) {
+            break
+        }      
+    }
+    return $password
+}
+
 function ReadIISPW {
+    #SecurityTokenServiceApplicationPool SharePoint Web Services System
     Write-Host "===== Read IIS PW ===== $(Get-Date)" -Fore "Yellow"
 
     # Current user (ex: Farm Account)
@@ -1464,9 +1507,6 @@ function ClearCacheIni() {
     Write-Host "Succeess" -Fore Green
 }
 
-function LaunchPhaseThree() {
-    Start-Process "powershell.exe" -ArgumentList "$scriptFile -phaseThree"
-}
 
 
 # Stops the SharePoint Timer Service on each server in the SharePoint Farm.
