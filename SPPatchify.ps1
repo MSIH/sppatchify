@@ -541,7 +541,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
     Write-Progress -Activity "Completed $(Get-Date)" -Completed	
 }
 
-function OpenRemotePSSession($server, $credentials) {
+function OpenRemotePSSession([string]$server, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty ) {
     $session = Get-PSSession | Where-Object { $_.ComputerName -eq $server }
     if (!$session) {        
         if ($remoteSessionPort -and $remoteSessionSSL) {
@@ -759,7 +759,7 @@ function ReportContentDatabases() {
 }
 
 
-function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJobs = 1) {
+function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJobs = 1, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty) {
     
     if (!$servers -or !$scriptBlocks) {
         return
@@ -788,7 +788,7 @@ function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJ
         }  
 
         Write-Host "Starting job for $avaialableServer"
-        $session = OpenRemotePSSession $avaialableServer GetFarmAccountCredentials    
+        $session = OpenRemotePSSession $avaialableServer $credentials   
         if ($session) {
             Invoke-Command -ScriptBlock $scriptBlock -Session $session -AsJob 
         }
@@ -855,7 +855,7 @@ function ChangeContent($state) {
                 }
             }
             $serverAddress = $global:servers | ForEach-Object { $_.Address }
-            DistributedJobs -scriptBlocks $sb -servers $serverAddress -maxJobs 1
+            DistributedJobs -scriptBlocks $sb -servers $serverAddress -maxJobs 1 -credentials GetFarmAccountCredentials
             
         }
         else {
