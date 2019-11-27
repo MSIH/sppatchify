@@ -539,6 +539,8 @@ function LoopRemotePatch($msg, $cmd, $params) {
         Write-Host "<< complete on $addr" -Fore "Green"
     }
     Write-Progress -Activity "Completed $(Get-Date)" -Completed	
+    # Clean up
+    Get-PSSession | Remove-PSSession -Confirm:$false
 }
 
 function OpenRemotePSSession([string]$server, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty ) {
@@ -764,7 +766,7 @@ function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJ
     if (!$servers -or !$scriptBlocks) {
         return
     }   
-
+    
     $counter = 0
     foreach ($scriptBlock in $scriptBlocks) {
         $avaialableServer = $null
@@ -804,7 +806,7 @@ function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJ
     # Wait for all jobs to complete and results ready to be received
     Wait-Job * | Out-Null
     Remove-Job -State Completed
-
+    Get-PSSession | Remove-PSSession
     <#
     # Process the results
     foreach ($job in Get-Job) {
