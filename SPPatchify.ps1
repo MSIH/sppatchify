@@ -867,6 +867,12 @@ function EnablePSRemoting() {
         Enable-WSManCredSSP -DelegateComputer * -Role Client -Force
         Restart-Service WinRM
     }
+    foreach ($f in $global:servers) {
+        invoke-comand -computername $f.Address -scriptblock {
+            Enable-WsManCredSSP -Role Server -Force
+        }
+    }
+
 }
 
 function ReadIISPW {
