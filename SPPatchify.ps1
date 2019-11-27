@@ -536,20 +536,23 @@ function LoopRemotePatch($msg, $cmd, $params) {
     Write-Progress -Activity "Completed $(Get-Date)" -Completed	
 }
 
-function OpenRemotePSSession() {
-    if ($remoteSessionPort -and $remoteSessionSSL) {
-        $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+function OpenRemotePSSession($server) {
+    $session = Get-PSSession | Where-Object { $_.ComputerName -eq $server }
+    if (!$session) {
+        if ($remoteSessionPort -and $remoteSessionSSL) {
+            $session = New-PSSession -ComputerName server -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+        }
+        elseif ($remoteSessionPort) {
+            $session = New-PSSession -ComputerName server -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
+        }
+        elseif ($remoteSessionSSL) {
+            $session = New-PSSession -ComputerName server -Credential $global:cred -Authentication Credssp -UseSSL
+        }
+        else {
+            $session = New-PSSession -ComputerName server -Credential $global:cred -Authentication Credssp
+        }
     }
-    elseif ($remoteSessionPort) {
-        $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
-    }
-    elseif ($remoteSessionSSL) {
-        $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
-    }
-    else {
-        $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
-    }
-    return $remote
+    return $session
 }
 function LoopRemoteCmd($msg, $cmd) {
     if (!$cmd) {
@@ -750,92 +753,59 @@ function ReportContentDatabases() {
     }
 }
 
-function DistributedJobs($tasks, $servers, $maxJobs = 1) {
-    if (!$servers) {
-        $servers = $global:servers
-    }
 
-    # create script block based on saved content database
-    $files = Get-ChildItem "$logFolder\contentdbs-*.csv" | Sort-Object LastAccessTime -Desc
-    if ($files -is [Array]) {
-        $files = $files[0]
-    }
+function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJobs = 1) {
+    
+    if (!$servers -or !$scriptBlocks) {
+        return
+    }   
 
-    # Loop databases and create script block
-    if ($files) {
-        Write-Host "Content DB - from CSV $($files.Fullname)" -Fore Yellow
-        $dbs = Import-Csv $files.Fullname  
-        Write-Host "Content DB - create script blocks" -Fore Yellow      
-        foreach ($db in $dbs) {  
-            $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($db.WebApp)
-            if ($wa) {          
-                $sb += @{
-                    "scriptBlock" = { 
-                        Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null                    
-                        Mount-SPContentDatabase -WebApplication $wa -Name $name -DatabaseServer $db.NormalizedDataSource | Out-Null };
-                    "dataBase"    = $name 
-                }
-            }
-        }
-    }
-
-    # create
-    $tasks = $sb
     $counter = 0
-    foreach ($task in $tasks) {
-
-        $running = @(Get-Job | Where-Object { $_.State -eq "Running" -or $_.State -eq "NotStarted" })
+    foreach ($scriptBlock in $scriptBlocks) {
+        $avaialableServer = $null
+        $activeJobs = $null
         $wait = $true
+
+        $ActiveJobs = @(Get-Job | Where-Object { $_.State -eq "Running" -or $_.State -eq "NotStarted" })
+        
         foreach ($server in $servers) {
-            if ( $maxJobs -gt $running.Location | Where-Object { $_ -eq $server.Address } )            { 
+            # if a server has less than maxJobs running, then do not wait
+            if ( $maxJobs -gt $activeJobs.Location | Where-Object { $_ -eq $server } ) { 
                 $wait = $False 
+                $avaialableServer = $server 
+                break
             }
         }
 
+        # wait while servers have maxJobs running
         if ($wait) {
-            $running | Wait-Job -Any | Out-Null
-        }
+            $activeJobs | Wait-Job -Any | Out-Null
+        }  
 
-        $AvaialableServers = $servers.Address | Where-Object { -not ($running.Location -contains $_) }
-        $server = $AvaialableServers[0]
-
-        Write-Host "Starting job for $server"
-        $session = Get-PSSession | Where-Object { $_.ComputerName -like "$server" }
-        if (!$session) {
-            # Dynamic open PSSession
-            if ($remoteSessionPort -and $remoteSessionSSL) {
-                $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
-            }
-            elseif ($remoteSessionPort) {
-                $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
-            }
-            elseif ($remoteSessionSSL) {
-                $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
-            }
-            else {
-                $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
-            }
-        }
+        Write-Host "Starting job for $avaialableServer"
+        $session = OpenRemotePSSession $avaialableServer
         Write-Host "Content DB - Mount Database" -Fore Yellow
-        Invoke-Command $task.scriptBlock -Session $session -AsJob
-         
+        Invoke-Command -ScriptBlock $scriptBlock -Session $session -AsJob 
+        
         # Progress
-        $prct = [Math]::Round(($counter / $tasks.Count) * 100)
+        $prct = [Math]::Round(($counter / $scriptBlocks.Count) * 100)
         if ($prct) {
-            Write-Progress -Activity "Add database" -Status "$($task.name) ($prct %) $(Get-Date)" -PercentComplete $prct
+            Write-Progress -Status "($prct %) $(Get-Date)" -PercentComplete $prct
         }
         $counter++
     }
 
     # Wait for all jobs to complete and results ready to be received
     Wait-Job * | Out-Null
+    Remove-Job -State Completed
 
+    <#
     # Process the results
     foreach ($job in Get-Job) {
         $result = Receive-Job $job
         Write-Host $result
     }
-    Remove-Job -State Completed
+    #>    
 }
 
 
@@ -858,65 +828,29 @@ function ChangeContent($state) {
         }
     }
     else {
-        # Add/Mount content database
-        # get newest file
-        # get database from file
-        # loop thru servers
-        # run mount command
-        # when job completes, run another mount command
-
-        
-        
-        
-
-
+        # create script block based on saved content database
         $files = Get-ChildItem "$logFolder\contentdbs-*.csv" | Sort-Object LastAccessTime -Desc
         if ($files -is [Array]) {
             $files = $files[0]
         }
 
-        # Loop databases
+        # Loop databases and create script block
         if ($files) {
-            Write-Host "Content DB - Mount from CSV $($files.Fullname)" -Fore Yellow
-            $dbs = Import-Csv $files.Fullname
-            $counter = 0
-	    
-            $i = 0
-            foreach ($db in $dbs) {
-                # Assign to SPServer
-                $mod = $i % $global:servers.count
-                $pc = $global:servers[$mod].Address
-        
+            Write-Host "Content DB - from CSV $($files.Fullname)" -Fore Yellow
+            $dbs = Import-Csv $files.Fullname  
+            Write-Host "Content DB - create script blocks" -Fore Yellow      
+            foreach ($db in $dbs) {  
                 $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($db.WebApp)
-                if ($wa) {
-                    Mount-SPContentDatabase -WebApplication $wa -Name $name -DatabaseServer $db.NormalizedDataSource | Out-Null
+                if ($wa) {          
+                    $sb += { 
+                        Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null                    
+                        Mount-SPContentDatabase -WebApplication $wa -Name $name -DatabaseServer $db.NormalizedDataSource | Out-Null 
+                    }                
                 }
-
+            }
+            $serverAddress = $global:servers | ForEach-Object { $_.Address }
+            DistributedJobs -scriptBlocks $sb -servers $serverAddress -maxJobs 1
             
-                $i++
-                # Progress
-                $prct = [Math]::Round(($counter / $dbs.Count) * 100)
-                if ($prct) {
-                    Write-Progress -Activity "Add database" -Status "$name ($prct %) $(Get-Date)" -PercentComplete $prct
-                }
-                $counter++
-
-            }
-	    
-            <#
-            if ($dbs) {
-                $dbs | Where-Object {
-                    $name = $_.Name
-                    $name
-
-                   
-                    $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($_.WebApp)
-                    if ($wa) {
-                        Mount-SPContentDatabase -WebApplication $wa -Name $name -DatabaseServer $_.NormalizedDataSource | Out-Null
-                    }
-                }
-            }
-            #>
         }
         else {
             Write-Host "Content DB - CSV not found" -Fore Yellow
