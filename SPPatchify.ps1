@@ -770,7 +770,7 @@ function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJ
         
         foreach ($server in $servers) {
             # if a server has less than maxJobs running, then do not wait
-            if ( $maxJobs -gt $activeJobs.Location | Where-Object { $_ -eq $server } ) { 
+            if ($maxJobs -gt ($activeJobs | Where-Object { $_.Location -eq $server }).Count) { 
                 $wait = $False 
                 $avaialableServer = $server 
                 break
@@ -783,8 +783,7 @@ function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJ
         }  
 
         Write-Host "Starting job for $avaialableServer"
-        $session = OpenRemotePSSession $avaialableServer
-        Write-Host "Content DB - Mount Database" -Fore Yellow
+        $session = OpenRemotePSSession $avaialableServer       
         Invoke-Command -ScriptBlock $scriptBlock -Session $session -AsJob 
         
         # Progress
