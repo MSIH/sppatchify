@@ -33,9 +33,9 @@ param (
     [Alias("c")]
     [switch]$CopyMedia,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -v -showVersion to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -v -showVersionExit to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
     [Alias("v")]
-    [switch]$showVersion,
+    [switch]$showVersionExit,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -phaseOneBinary to execute Phase One only (run binary)')]
     [switch]$phaseOneBinary,
@@ -60,7 +60,7 @@ param (
     [switch]$remoteSessionSSL,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -test to open Remote PS Session and verify connectivity all farm members.')]
-    [switch]$testRemotePS,
+    [switch]$testRemotePSExit,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -skipProductLocal to run Phase One binary without Get-SPProduct -Local.')]
     [switch]$skipProductLocal = $false,
@@ -68,8 +68,8 @@ param (
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -targetServers to run for specific machines only.  Applicable to PhaseOne and PhaseTwo.')]
     [string[]]$targetServers,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -productlocal to execute remote cmdlet [Get-SPProduct -Local] on all servers in farm, or target/wave servers only if given.')]
-    [switch]$productlocal,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -productlocalExit to execute remote cmdlet [Get-SPProduct -Local] on all servers in farm, or target/wave servers only if given.')]
+    [switch]$productlocalExit,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -mount to execute Mount-SPContentDatabase to load CSV and attach content databases to web applications.')]
     [string]$mount,
@@ -78,22 +78,19 @@ param (
     [string]$appOffline,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -bypass to run with PACKAGE.BYPASS.DETECTION.CHECK=1')]
-    [switch]$bypass,
+    [switch]$bypass, 
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -changeServices TRUE/FALSE to toggle the farm active state UP/DOWN')]
-    [string]$changeServices,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -saveServiceInstanceExit to snapshot CSV with current Service Instances running.')]
+    [switch]$saveServiceInstanceExit,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -saveServiceInstance to snapshot CSV with current Service Instances running.')]
-    [switch]$saveServiceInstance,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -reportContentDatabasesExit to snapshot CSV with Content Databases.')]
+    [switch]$reportContentDatabasesExit,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -reportContentDatabases to snapshot CSV with Content Databases.')]
-    [switch]$ReportContentDatabases,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -startSharePointRelatedServicesExit to start sharepoint and iis services.')]
+    [switch]$startSharePointRelatedServicesExit,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -startSharePointRelatedServices to start sharepoint and iis services.')]
-    [switch]$startSharePointRelatedServices,
-
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -stopSharePointRelatedServices to stop sharepoint and iis services.')]
-    [switch]$stopSharePointRelatedServices,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -stopSharePointRelatedServicesExit to stop sharepoint and iis services.')]
+    [switch]$stopSharePointRelatedServicesExit,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -EnablePSRemoting to enable CredSSP.')]
     [switch]$EnablePSRemoting,
@@ -120,8 +117,16 @@ param (
     [switch]$MountContentDatabase,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -UpgradeContent to stop sharepoint and iis services.')]
-    [switch]$UpgradeContent
+    [switch]$UpgradeContent,
 
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -Standard download and copy CU, pause search, install CU, run psconfig and then start search.')]
+    [switch]$Standard,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -Advanced download and copy CU, pause search, install CU, dismount content databases, run psconfig, mount content databases, and then start search.')]
+    [switch]$Advanced,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -Complete download and copy CU, clear ini cache, restart IIS,save status of services, pause search, install CU, dismount content databases, run psconfig, mount content databases, start services, and then start search.')]
+    [switch]$Complete
 )
 
 # Plugin
@@ -720,6 +725,18 @@ function ChangeServices($state) {
     LoopRemoteCmd "$action services on " $sb
 }
 
+function PauseSharePointSearch() {
+    Write-Host "Pause search crawler ..."    
+    $ssa = Get-SPEenterpriseSearchServiceApplication         
+    $ssa.pause()    
+}
+
+function StartSharePointSearch() {
+     Write-Host "Start search crawler ..."    
+    $ssa = Get-SPEenterpriseSearchServiceApplication         
+    $ssa.resume()     
+}
+
 function RunConfigWizard() {
     Write-Host "===== RunConfigWizard =====" -Fore Yellow
 
@@ -868,6 +885,10 @@ function ChangeContent($state) {
 #endregion
 
 #region general
+function getRemoteServers() {
+    return $global:servers | Where-Object { $_.Address -ne $env:computername }
+}
+
 function EnablePSRemoting() {
     $ssp = Get-WSManCredSSP
     if ($ssp[0] -match "not configured to allow delegating") {
@@ -875,10 +896,14 @@ function EnablePSRemoting() {
         Enable-WSManCredSSP -DelegateComputer * -Role Client -Force
         Restart-Service WinRM
     }
-    foreach ($f in $global:servers) {
-        invoke-comand -computername $f.Address -scriptblock {
-            Enable-WsManCredSSP -Role Server -Force
-            Restart-Service WinRM
+    $remoteServers = getRemoteServers
+    foreach ($remoteServer in $remoteServers ) {
+        invoke-comand -computername $remoteServer.Address -scriptblock {
+            $isCredSSPServer = ((Get-Item WSMan:\LocalHost\Service\Auth\CredSSP).Value -eq "true")
+            if (-not $isCredSSPServer) {
+                Enable-WsManCredSSP -Role Server -Force
+                Restart-Service WinRM
+            }
         }
     }
 
@@ -896,8 +921,7 @@ function GetFarmAccountCredentials() {
         $PSCredential = New-Object System.Management.Automation.PSCredential -ArgumentList $farmAccount, $securePassword
     }    
     
-    return $PSCredential 
-     
+    return $PSCredential      
 }
 
 Function GetFarmAccountPassword() {    
@@ -1610,7 +1634,7 @@ function TestRemotePS() {
     # WMI Uptime
     $sb = {
         $wmi = Get-WmiObject -Class Win32_OperatingSystem;
-        $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) – $wmi.ConvertToDateTime($wmi.LastBootUpTime);
+        $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) - $wmi.ConvertToDateTime($wmi.LastBootUpTime);
         $t | Select-Object Days, Hours, Minutes
     }
     Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb | Format-Table -AutoSize
@@ -1730,32 +1754,30 @@ function Main() {
     mkdir "$logFolder\msp" -ErrorAction SilentlyContinue | Out-Null
     Start-Transcript $logFile
 
-    # Version
-    #"SPPatchify version 0.143 last modified 02-10-2019"
-	
-    # Parameters
-    $msg = "=== PARAMS === $(Get-Date)"
-    $msg +=	"download = $downloadMedia"
-    $msg +=	"copy = $copyMedia"
-    $msg +=	"version = $showVersion"
-    $msg +=	"phaseTwo = $phaseTwo"
-    Write-Host "Content Databases Online: $((Get-SPContentDatabase).Count)"
+    # Enable CredSSP remoting      
+    EnablePSRemoting
 
+    
+    if ($EnablePSRemoting) {  
+        # Enable CredSSP remoting      
+        EnablePSRemoting
+    }
+    
     # Save Service Instance
-    if ($saveServiceInstance) {
+    if ($saveServiceInstanceExit) {
         SaveServiceInst
         Exit
     }
 
     # Run SPPL to detect new binary patches
-    if ($productlocal) {
+    if ($productlocalExit) {
         TestRemotePS
         LoopRemoteCmd "Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue; Get-SPProduct -Local"
         Exit
     }
         
     # Test PowerShell
-    if ($testRemotePS) {
+    if ($testRemotePSExit) {
         TestRemotePS
         Exit
     }
@@ -1767,13 +1789,13 @@ function Main() {
     }
 	
     # Display version
-    if ($showVersion) {
+    if ($showVersionExit) {
         ShowVersion
         Exit
     }
  
     # Mount Databases
-    if ($reportContentDatabases) {
+    if ($reportContentDatabasesExit) {
         ReportContentDatabases
         Exit
     }
@@ -1789,11 +1811,11 @@ function Main() {
     }
 
     # Change Services
-    if ($startSharePointRelatedServices) {
+    if ($startSharePointRelatedServicesExit) {
         changeServices $true
         Exit
     }
-    if ($stopSharePointRelatedServices) {
+    if ($stopSharePointRelatedServicesExit) {
         changeServices $false
         Exit
     }
@@ -1807,6 +1829,14 @@ function Main() {
         AppOffline $false
         Exit
     }	
+
+    function StartSharePointRelatedServices() {
+        changeServices $true
+       
+    }
+    function StopSharePointRelatedServices() {
+        changeServices $false
+    }
 
     
     # Read IIS Password
@@ -1900,9 +1930,61 @@ function Main() {
         UpgradeContent
     } 
 
+    if ($Standard) {
+        PatchRemoval
+        PatchMenu    
+        CopyMedia "Copy"
+        PauseSharePointSearch
+        RunAndInstallCU
+        WaitReboot
+        VerifyCUInstalledOnAllServers         
+        RunConfigWizard        
+        UpgradeContent
+        StartSharePointSearch
+        DisplayCA
+    }
 
+    if ($Advanced) {
+        # dismount databases before running psconfig
+        # mount databases distributed           
+        PatchRemoval
+        PatchMenu    
+        CopyMedia "Copy"
+        PauseSharePointSearch
+        RunAndInstallCU
+        WaitReboot
+        VerifyCUInstalledOnAllServers 
+        DismountContentDatabase #Advanced
+        RunConfigWizard
+        MountContentDatabase #Advanced
+        UpgradeContent
+        StartSharePointSearch
+        DisplayCA
+    }
 
+    if ($Complete) {
+        # dismount databases before running psconfig
+        # mount databases distributed           
+        PatchRemoval
+        PatchMenu    
+        CopyMedia "Copy"
+        ClearCacheIni #Complete
+        IISStart #Complete
+        SaveServiceInst  
+        PauseSharePointSearch      
+        RunAndInstallCU
+        WaitReboot
+        VerifyCUInstalledOnAllServers 
+        DismountContentDatabase #Advanced
+        RunConfigWizard
+        MountContentDatabase #Advanced
+        StartSharePointRelatedServices #Complete
+        UpgradeContent
+        StartSharePointSearch
+        DisplayCA
+    }
 
+    <#>
     # Core steps
     if (!$phaseTwo -and !$phaseThree) {
         if ($copyMedia) {
@@ -1970,10 +2052,13 @@ function Main() {
         StartServiceInst
         DisplayCA
     }
-	
+    #>
+    
     # Calculate Duration and Run Cleanup
     CalcDuration
     FinalCleanUp
     Write-Host "DONE"
+    # LocalReboot
+    Restart-Computer -Force
 }
 Main
