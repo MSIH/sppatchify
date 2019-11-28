@@ -878,6 +878,7 @@ function EnablePSRemoting() {
     foreach ($f in $global:servers) {
         invoke-comand -computername $f.Address -scriptblock {
             Enable-WsManCredSSP -Role Server -Force
+            Restart-Service WinRM
         }
     }
 
@@ -901,20 +902,8 @@ function GetFarmAccountCredentials() {
 
 Function GetFarmAccountPassword() {    
     $farmAccount = GetFarmAccount
-    foreach ( $server in (Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address)) {
-        $accounts = Get-WmiObject -ComputerName $server -Namespace "root\MicrosoftIISV2" -Class "IIsApplicationPoolSetting" -Authentication PacketPrivacy | Select-Object WAMUserName, WAMUserPass
-        #Read more: https://www.sharepointdiary.com/2012/01/how-to-retrieve-iis-application-pool-password.html#ixzz66TX81K00
-        
-        foreach ($account in $accounts) {
-            if ($account.WAMUserName -eq $farmAccount) {
-                $password = $account.WAMUserPass 
-                break
-            }            
-        }  
-        if ($password) {
-            break
-        }      
-    }
+    import-Module WebAdministration
+    $password = (Get-ChildItem IIS:\AppPools | Where-Object { $_.processModel.userName -eq $farmAccount })[0].processModel.password 
     return $password
 }
 
