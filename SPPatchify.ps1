@@ -732,7 +732,7 @@ function PauseSharePointSearch() {
 }
 
 function StartSharePointSearch() {
-     Write-Host "Start search crawler ..."    
+    Write-Host "Start search crawler ..."    
     $ssa = Get-SPEenterpriseSearchServiceApplication         
     $ssa.resume()     
 }
@@ -1315,9 +1315,28 @@ function PatchRemoval() {
 function PatchMenu() {
     # Ensure folder
     mkdir "$root\media" -ErrorAction SilentlyContinue | Out-Null
-PatchRemoval
-    $Destination =  .\AutoSPSourceBuilder.ps1 -UpdateLocation "$root\media"
-$Destination 
+    PatchRemoval
+    
+    $spYear = $null
+    $spYear = (Get-SPFarm).BuildVersion.Major
+    $spAvailableVersionNumbers = @{
+        19 = "2019"
+        16 = "2016"
+        13 = "2013"
+    }
+    while ([string]::IsNullOrEmpty($spYear)) {
+        Start-Sleep -Seconds 1
+        $spYear = $spAvailableVersionNumbers  | Out-GridView -Title "Please select the version of SharePoint to download updates for:" -PassThru
+        if ($spYear.Count -gt 1) {
+            Write-Warning "Please only select ONE version. Re-prompting..."
+            Remove-Variable -Name spYear -Force -ErrorAction SilentlyContinue
+        }
+    }
+    $sharePointVersion = $spAvailableVersionNumbers[$spYear.Name]
+   
+    Write-Host " - SharePoint $sharePointVersion selected."
+    $Destination = .\AutoSPSourceBuilder.ps1 -UpdateLocation "$root\media" -SharePointVersion $sharePointVersion
+    $Destination 
     Get-ChildItem -Path $Destination -Recurse -File $Destination | Copy-Item -Destination $root\media 
     #Get-ChildItem -Path $root\media -Recurse -Directory | Remove-Item 
     <#
@@ -1662,33 +1681,33 @@ function VerifyWMIUptime() {
     # WMI Uptime
     $sb = {
         $wmi = Get-WmiObject -Class Win32_OperatingSystem;
-        $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) –nvertToDateTime($wmi.LastBootUpTime);
-        $t;
-    }
-    $result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb 
+        $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) –mi.LastBootUpTime);
+    $t;
+}
+$result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb 
 
-    # Compare threshold and suggest reboot
-    $warn = 0
-    foreach ($r in $result) {
-        $TotalMinutes = [int]$r.TotalMinutes
-        if ($TotalMinutes -gt $maxrebootminutes) {
-            Write-Host "WARNING - Last reboot was $TotalMinutes minutes ago for $($r.PSComputerName)" -Fore Black -Backgroundcolor Yellow
-            $warn++
-        }
+# Compare threshold and suggest reboot
+$warn = 0
+foreach ($r in $result) {
+    $TotalMinutes = [int]$r.TotalMinutes
+    if ($TotalMinutes -gt $maxrebootminutes) {
+        Write-Host "WARNING - Last reboot was $TotalMinutes minutes ago for $($r.PSComputerName)" -Fore Black -Backgroundcolor Yellow
+        $warn++
     }
+}
 
-    # Suggest reboot
-    if ($warn) {
-        # Prompt user
-        $Readhost = Read-Host "Do you want to reboot above servers?  [Type R to Reboot.  Anything else to continue.]" 
-        if ($ReadHost -like 'R*') { 
-            # Reboot all
-            Get-PSSession | Format-Table -Auto
-            Write-Host "Rebooting above servers ... "
-            $sb = { Restart-Computer -Force }
-            Invoke-Command -ScriptBlock $sb -Session (Get-PSSession)
-        }
+# Suggest reboot
+if ($warn) {
+    # Prompt user
+    $Readhost = Read-Host "Do you want to reboot above servers?  [Type R to Reboot.  Anything else to continue.]" 
+    if ($ReadHost -like 'R*') { 
+        # Reboot all
+        Get-PSSession | Format-Table -Auto
+        Write-Host "Rebooting above servers ... "
+        $sb = { Restart-Computer -Force }
+        Invoke-Command -ScriptBlock $sb -Session (Get-PSSession)
     }
+}
 }
 
 
