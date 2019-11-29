@@ -552,20 +552,43 @@ function OpenRemotePSSession([string]$server, [System.Management.Automation.PSCr
     $session = Get-PSSession | Where-Object { $_.ComputerName -eq $server }
     if (!$session) {        
         if ($remoteSessionPort -and $remoteSessionSSL) {
-            $session = New-PSSession -ComputerName server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
+            if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
+                $session = New-PSSession -ComputerName $server -Port $remoteSessionPort -UseSSL
+            }
+            else {
+                $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort -UseSSL 
+            }
+
         }
         elseif ($remoteSessionPort) {
-            $session = New-PSSession -ComputerName server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort
+            if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
+                $session = New-PSSession -ComputerName $server -Port $remoteSessionPort 
+            }
+            else {
+                $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort 
+            }
         }
         elseif ($remoteSessionSSL) {
-            $session = New-PSSession -ComputerName server -Credential $credentials -Authentication Credssp -UseSSL
+      
+            if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
+                $session = New-PSSession -ComputerName $server  -UseSSL
+            }
+            else {
+                $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -UseSSL 
+            }        
         }
         else {
-            $session = New-PSSession -ComputerName server -Credential $credentials -Authentication Credssp
+            if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
+                $session = New-PSSession -ComputerName $server 
+            }
+            else {
+                $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp 
+            }
         }
     }
     return $session
 }
+
 function LoopRemoteCmd($msg, $cmd) {
     if (!$cmd) {
         return
@@ -778,11 +801,18 @@ function ReportContentDatabases() {
 }
 
 
-function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJobs = 1, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty) {
+function DistributedJobs($scriptBlocks, [string[]]$servers, [int]$maxJobs = 1, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty) {
     
     if (!$servers -or !$scriptBlocks) {
         return
     }   
+    Get-Job | Remove-Job 
+    Get-PSSession | Remove-PSSession
+
+    $remoteServers = $servers | Where-Object { $_ -ne $env:computername }
+    $remoteServers += "localhost"
+    $servers = $remoteServers
+    $servers
     
     $counter = 0
     foreach ($scriptBlock in $scriptBlocks) {
@@ -790,9 +820,11 @@ function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJ
         $activeJobs = $null
         $wait = $true
 
-        $ActiveJobs = @(Get-Job | Where-Object { $_.State -eq "Running" -or $_.State -eq "NotStarted" })
+        $ActiveJobs = @(Get-Job | Where-Object { $_.State -eq "Running" }) -or $_.State -eq "NotStarted"
         
         foreach ($server in $servers) {
+            $server
+            ($activeJobs | Where-Object { $_.Location -eq $server }).Count
             # if a server has less than maxJobs running, then do not wait
             if ($maxJobs -gt ($activeJobs | Where-Object { $_.Location -eq $server }).Count) { 
                 $wait = $False 
@@ -806,31 +838,46 @@ function DistributedJobs([string[]]$scriptBlocks, [string[]]$servers, [int]$maxJ
             $activeJobs | Wait-Job -Any | Out-Null
         }  
 
-        Write-Host "Starting job for $avaialableServer"
-        $session = OpenRemotePSSession $avaialableServer $credentials   
-        if ($session) {
-            Invoke-Command -ScriptBlock $scriptBlock -Session $session -AsJob 
+        if (!$avaialableServer) {
+            $activeJobs
+            Write-Host "---"
+            $server 
         }
+
+        Write-Host "Starting job for $avaialableServer"
+        if ($avaialableServer -ne $env:computername) {
+            $session = OpenRemotePSSession $avaialableServer $credentials   
+            if ($session) {
+                Invoke-Command -ScriptBlock $scriptBlock -Session $session -AsJob 
+            } 
+        }
+        else {
+            Start-Job -ScriptBlock $scriptBlock 
+        }
+        
         
         # Progress
         $prct = [Math]::Round(($counter / $scriptBlocks.Count) * 100)
         if ($prct) {
-            Write-Progress -Status "($prct %) $(Get-Date)" -PercentComplete $prct
+            Write-Progress -Activity "Jobs" -Status "($prct %) $(Get-Date)" -PercentComplete $prct
         }
         $counter++
     }
 
     # Wait for all jobs to complete and results ready to be received
     Wait-Job * | Out-Null
-    Remove-Job -State Completed
-    Get-PSSession | Remove-PSSession
-    <#
+
+    
     # Process the results
-    foreach ($job in Get-Job) {
-        $result = Receive-Job $job
+    foreach ($job in Get-Job -IncludeChildJob) {
+        $result = Receive-Job $job 
         Write-Host $result
     }
-    #>    
+    
+
+    Get-Job | Remove-Job 
+    Get-PSSession | Remove-PSSession
+     
 }
 
 
@@ -1681,7 +1728,7 @@ function VerifyWMIUptime() {
     # WMI Uptime
     $sb = {
         $wmi = Get-WmiObject -Class Win32_OperatingSystem;
-        $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) –mi.LastBootUpTime);
+        $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) Â–mi.LastBootUpTime);
     $t;
 }
 $result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb 
