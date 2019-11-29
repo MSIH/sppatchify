@@ -1308,13 +1308,19 @@ function GetMonthInt($name) {
 }
 function PatchRemoval() {
     # Remove patch media
-    $files = Get-ChildItem "$root\media\*.exe" -ErrorAction SilentlyContinue | Out-Null
+    $files = Get-ChildItem "$root\media\*.exe" -ErrorAction SilentlyContinue #| Out-Null
     $files | Format-Table -AutoSize
     $files | Remove-Item -Confirm:$false -Force
 }
 function PatchMenu() {
     # Ensure folder
     mkdir "$root\media" -ErrorAction SilentlyContinue | Out-Null
+PatchRemoval
+    $Destination =  .\AutoSPSourceBuilder.ps1 -UpdateLocation "$root\media"
+$Destination 
+    Get-ChildItem -Path $Destination -Recurse -File $Destination | Copy-Item -Destination $root\media 
+    #Get-ChildItem -Path $root\media -Recurse -Directory | Remove-Item 
+    <#
 
     # Skip if we already have media
     $files = Get-ChildItem "$root\media\*.exe"
@@ -1422,6 +1428,7 @@ function PatchMenu() {
         Stop-Transcript
         Exit
     }
+    #>
 }
 
 function DetectAdmin() {
@@ -1655,7 +1662,7 @@ function VerifyWMIUptime() {
     # WMI Uptime
     $sb = {
         $wmi = Get-WmiObject -Class Win32_OperatingSystem;
-        $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) â€“ $wmi.ConvertToDateTime($wmi.LastBootUpTime);
+        $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) –nvertToDateTime($wmi.LastBootUpTime);
         $t;
     }
     $result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb 
