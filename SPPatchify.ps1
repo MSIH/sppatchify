@@ -27,7 +27,7 @@ param (
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -d -downloadMedia to execute Media Download only.  No farm changes.  Prep step for real patching later.')]
     [Alias("d")]
     [switch]$downloadMedia,
-    # [string]$downloadVersion,
+    [string]$downloadVersion,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -c -CopyMedia to copy \media\ across all peer machines.  No farm changes.  Prep step for real patching later.')]
     [Alias("c")]
@@ -1364,23 +1364,40 @@ function PatchMenu() {
     mkdir "$root\media" -ErrorAction SilentlyContinue | Out-Null
     PatchRemoval
     
-    $spYear = $null
-    $spYear = (Get-SPFarm).BuildVersion.Major
-    $spAvailableVersionNumbers = @{
-        19 = "2019"
-        16 = "2016"
-        13 = "2013"
+    If ($downloadVersion) {
+        $sharePointVersion = $downloadVersion
     }
-    while ([string]::IsNullOrEmpty($spYear)) {
-        Start-Sleep -Seconds 1
-        $spYear = ($spAvailableVersionNumbers  | Out-GridView -Title "Please select the version of SharePoint to download updates for:" -PassThru).Name
-        if ($spYear.Count -gt 1) {
-            Write-Warning "Please only select ONE version. Re-prompting..."
-            Remove-Variable -Name spYear -Force -ErrorAction SilentlyContinue
+    else {
+        $spYear = $null
+        $spYear = (Get-SPFarm).BuildVersion
+        $spAvailableVersionNumbers = @{
+            19 = "2019"
+            16 = "2016"
+            15 = "2013"
         }
+
+        if ($spYear.Major -eq 15) {
+            $spYear = 15
+        }
+        elseif ($spYear.Major -eq 16  ) {
+            if ($spYear.build -ge 10337) {
+                $spYear = 19
+            }
+            else {
+                $spYear = 16
+            }
+        }
+        while ([string]::IsNullOrEmpty($spYear)) {
+            Start-Sleep -Seconds 1
+            $spYear = ($spAvailableVersionNumbers | Out-GridView -Title "Please select the version of SharePoint to download updates for:" -PassThru).Name
+            if ($spYear.Count -gt 1) {
+                Write-Warning "Please only select ONE version. Re-prompting..."
+                Remove-Variable -Name spYear -Force -ErrorAction SilentlyContinue
+            }
+        }
+        $sharePointVersion = $spAvailableVersionNumbers[$spYear]     
     }
-    $sharePointVersion = $spAvailableVersionNumbers[$spYear]
-   
+    
     Write-Host " - SharePoint $sharePointVersion selected."
     $Destination = .\AutoSPSourceBuilder.ps1 -UpdateLocation "$root\media" -SharePointVersion $sharePointVersion
     $Destination 
@@ -1729,32 +1746,32 @@ function VerifyWMIUptime() {
     $sb = {
         $wmi = Get-WmiObject -Class Win32_OperatingSystem;
         $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) - $wmi.ConvertToDateTime($wmi.LastBootUpTime);
-    $t;
-}
-$result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb 
-
-# Compare threshold and suggest reboot
-$warn = 0
-foreach ($r in $result) {
-    $TotalMinutes = [int]$r.TotalMinutes
-    if ($TotalMinutes -gt $maxrebootminutes) {
-        Write-Host "WARNING - Last reboot was $TotalMinutes minutes ago for $($r.PSComputerName)" -Fore Black -Backgroundcolor Yellow
-        $warn++
+        $t;
     }
-}
+    $result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb 
 
-# Suggest reboot
-if ($warn) {
-    # Prompt user
-    $Readhost = Read-Host "Do you want to reboot above servers?  [Type R to Reboot.  Anything else to continue.]" 
-    if ($ReadHost -like 'R*') { 
-        # Reboot all
-        Get-PSSession | Format-Table -Auto
-        Write-Host "Rebooting above servers ... "
-        $sb = { Restart-Computer -Force }
-        Invoke-Command -ScriptBlock $sb -Session (Get-PSSession)
+    # Compare threshold and suggest reboot
+    $warn = 0
+    foreach ($r in $result) {
+        $TotalMinutes = [int]$r.TotalMinutes
+        if ($TotalMinutes -gt $maxrebootminutes) {
+            Write-Host "WARNING - Last reboot was $TotalMinutes minutes ago for $($r.PSComputerName)" -Fore Black -Backgroundcolor Yellow
+            $warn++
+        }
     }
-}
+
+    # Suggest reboot
+    if ($warn) {
+        # Prompt user
+        $Readhost = Read-Host "Do you want to reboot above servers?  [Type R to Reboot.  Anything else to continue.]" 
+        if ($ReadHost -like 'R*') { 
+            # Reboot all
+            Get-PSSession | Format-Table -Auto
+            Write-Host "Rebooting above servers ... "
+            $sb = { Restart-Computer -Force }
+            Invoke-Command -ScriptBlock $sb -Session (Get-PSSession)
+        }
+    }
 }
 
 
@@ -2135,9 +2152,9 @@ function Main() {
     FinalCleanUp
     Write-Host "DONE"
     # LocalReboot
-    if($Standard){
-    write-host "reboot"
-    #Restart-Computer -Force
+    if ($Standard) {
+        write-host "reboot"
+        #Restart-Computer -Force
     }
 }
 Main
