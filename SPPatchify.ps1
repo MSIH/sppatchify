@@ -27,7 +27,7 @@ param (
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -d -downloadMedia to execute Media Download only.  No farm changes.  Prep step for real patching later.')]
     [Alias("d")]
     [switch]$downloadMedia,
-    [string]$downloadVersion,
+    # [string]$downloadVersion,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -c -CopyMedia to copy \media\ across all peer machines.  No farm changes.  Prep step for real patching later.')]
     [Alias("c")]
@@ -945,7 +945,7 @@ function EnablePSRemoting() {
     }
     $remoteServers = getRemoteServers
     foreach ($remoteServer in $remoteServers ) {
-        invoke-comand -computername $remoteServer.Address -scriptblock {
+        invoke-command -computername $remoteServer.Address -scriptblock {
             $isCredSSPServer = ((Get-Item WSMan:\LocalHost\Service\Auth\CredSSP).Value -eq "true")
             if (-not $isCredSSPServer) {
                 Enable-WsManCredSSP -Role Server -Force
@@ -1373,13 +1373,13 @@ function PatchMenu() {
     }
     while ([string]::IsNullOrEmpty($spYear)) {
         Start-Sleep -Seconds 1
-        $spYear = $spAvailableVersionNumbers  | Out-GridView -Title "Please select the version of SharePoint to download updates for:" -PassThru
+        $spYear = ($spAvailableVersionNumbers  | Out-GridView -Title "Please select the version of SharePoint to download updates for:" -PassThru).Name
         if ($spYear.Count -gt 1) {
             Write-Warning "Please only select ONE version. Re-prompting..."
             Remove-Variable -Name spYear -Force -ErrorAction SilentlyContinue
         }
     }
-    $sharePointVersion = $spAvailableVersionNumbers[$spYear.Name]
+    $sharePointVersion = $spAvailableVersionNumbers[$spYear]
    
     Write-Host " - SharePoint $sharePointVersion selected."
     $Destination = .\AutoSPSourceBuilder.ps1 -UpdateLocation "$root\media" -SharePointVersion $sharePointVersion
@@ -1728,7 +1728,7 @@ function VerifyWMIUptime() {
     # WMI Uptime
     $sb = {
         $wmi = Get-WmiObject -Class Win32_OperatingSystem;
-        $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) mi.LastBootUpTime);
+        $t = $wmi.ConvertToDateTime($wmi.LocalDateTime) - $wmi.ConvertToDateTime($wmi.LastBootUpTime);
     $t;
 }
 $result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb 
@@ -1839,13 +1839,14 @@ function Main() {
     # Save Service Instance
     if ($saveServiceInstanceExit) {
         SaveServiceInst
+        # display file
         Exit
     }
 
     # Run SPPL to detect new binary patches
     if ($productlocalExit) {
         TestRemotePS
-        LoopRemoteCmd "Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue; Get-SPProduct -Local"
+        ProductLocal
         Exit
     }
         
@@ -1870,10 +1871,11 @@ function Main() {
     # Mount Databases
     if ($reportContentDatabasesExit) {
         ReportContentDatabases
+        # display file
         Exit
     }
 
-    # Change Services
+    <# Change Services
     if ($changeServices.ToUpper() -eq "TRUE") {
         changeServices $true
         Exit
@@ -1882,6 +1884,7 @@ function Main() {
         changeServices $false
         Exit
     }
+    #>
 
     # Change Services
     if ($startSharePointRelatedServicesExit) {
@@ -1921,7 +1924,7 @@ function Main() {
     }
 
     # WMI Uptime
-    VerifyWMIUptime
+    # VerifyWMIUptime
 
     # Prepare \LOG\ folder
     LoopRemoteCmd "Create log directory on" "mkdir '$logFolder' -ErrorAction SilentlyContinue | Out-Null"
@@ -2132,6 +2135,9 @@ function Main() {
     FinalCleanUp
     Write-Host "DONE"
     # LocalReboot
-    Restart-Computer -Force
+    if($Standard){
+    write-host "reboot"
+    #Restart-Computer -Force
+    }
 }
 Main
