@@ -3,9 +3,7 @@
 	SharePoint Central Admin - View active services across entire farm. No more select machine drop down dance!
 .DESCRIPTION
 	Apply CU patch to entire farm from one PowerShell console.
-
     NOTE - must run local to a SharePoint server under account with farm admin rights.
-
 	Comments and suggestions always welcome!  spjeff@spjeff.com or @spjeff
 .NOTES
 	File Namespace	: SPPatchify.ps1
@@ -16,10 +14,6 @@
 .LINK
 	Source Code
 	http://www.github.com/spjeff/sppatchify
-	https://www.spjeff.com/2016/05/16/sppatchify-cu-patch-entire-farm-from-one-script/
-	
-	Patch Notes
-	http://sharepointupdates.com
 #>
 
 [CmdletBinding()]
@@ -35,13 +29,7 @@ param (
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -v -showVersionExit to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
     [Alias("v")]
-    [switch]$showVersionExit,
-
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -phaseOneBinary to execute Phase One only (run binary)')]
-    [switch]$phaseOneBinary,
-	
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -quick to run ONLY EXE binary')]
-    [switch]$quick,
+    [switch]$showVersionExit, 
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -phaseTwo to execute Phase Two after local reboot.')]
     [switch]$phaseTwo,
@@ -49,10 +37,6 @@ param (
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -phaseThree to execute Phase Three attach and upgrade content.')]
     [switch]$phaseThree,
 	
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -o -onlineContent to keep content databases online.  Avoids Dismount/Mount.  NOTE - Will substantially increase patching duration for farms with more user content.')]
-    [Alias("o")]
-    [switch]$onlineContent,
-
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -remoteSessionPort to open PSSession (remoting) with custom port number.')]
     [string]$remoteSessionPort,
 
@@ -61,9 +45,6 @@ param (
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -test to open Remote PS Session and verify connectivity all farm members.')]
     [switch]$testRemotePSExit,
-
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -skipProductLocal to run Phase One binary without Get-SPProduct -Local.')]
-    [switch]$skipProductLocal = $false,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -targetServers to run for specific machines only.  Applicable to PhaseOne and PhaseTwo.')]
     [string[]]$targetServers,
@@ -210,7 +191,7 @@ function SafetyEXE() {
     # Build CMD
     $ver = (Get-SPFarm).BuildVersion.Major
     if ($ver -eq 15) {
-        foreach ($server in $global:servers) {
+        foreach ($server in getFarmServers) {
             $addr = $server.Address
             $c = (Get-ChildItem "\\$addr\$remoteRoot\media").Count
             if ($c -ne 3) {
@@ -250,7 +231,7 @@ function RunAndInstallCU() {
         $taskName = "SPPatchify"
 
         # Loop - Run Task Scheduler
-        foreach ($server in $global:servers) {
+        foreach ($server in getFarmServers) {
             # Local PC - No reboot
             $addr = $server.Address
             if ($addr -eq $env:computername) {
@@ -285,7 +266,7 @@ function RunAndInstallCU() {
 	
     # SharePoint 2016 Force Reboot
     if ($ver -eq 16) {
-        foreach ($server in $global:servers) {
+        foreach ($server in getFarmServers) {
             $addr = $server.Address
             if ($addr -ne $env:computername) {
                 Write-Host "Reboot $($addr)" -Fore Yellow
@@ -304,11 +285,11 @@ function WaitEXE($patchName) {
 
     # Watch binary complete
     $counter = 0
-    if ($global:servers) {
-        foreach ($server in $global:servers) {	
+    if (getFarmServers) {
+        foreach ($server in getFarmServers) {	
             # Progress
             $addr = $server.Address
-            $prct = [Math]::Round(($counter / $global:servers.Count) * 100)
+            $prct = [Math]::Round(($counter / getFarmServers.Count) * 100)
             if ($prct) {
                 Write-Progress -Activity "Wait EXE ($prct %) $(Get-Date)" -Status $addr -PercentComplete $prct
             }
@@ -387,12 +368,12 @@ function WaitReboot() {
 	
     # Verify machines online
     $counter = 0
-    foreach ($server in $global:servers) {
+    foreach ($server in getFarmServers) {
         # Progress
         $addr = $server.Address
         Write-Host $addr -Fore Yellow
         if ($addr -ne $env:COMPUTERNAME) {
-            $prct = [Math]::Round(($counter / $global:servers.Count) * 100)
+            $prct = [Math]::Round(($counter / getFarmServers.Count) * 100)
             if ($prct) {
                 Write-Progress -Activity "Waiting for machine ($prct %) $(Get-Date)" -Status $addr -PercentComplete $prct
             }
@@ -402,16 +383,16 @@ function WaitReboot() {
             do {
                 # Dynamic open PSSession
                 if ($remoteSessionPort -and $remoteSessionSSL) {
-                    $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
                 }
                 elseif ($remoteSessionPort) {
-                    $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
+                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort
                 }
                 elseif ($remoteSessionSSL) {
-                    $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
+                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL
                 }
                 else {
-                    $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
+                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp
                 }
 
 
@@ -493,7 +474,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
 
     # Loop servers
     $counter = 0
-    foreach ($server in $global:servers) {
+    foreach ($server in getFarmServers) {
         # Overwrite restart parameter
         $ver = (Get-SPFarm).BuildVersion.Major
         $addr = $server.Address
@@ -510,7 +491,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
         }
 	
         # Progress
-        $prct = [Math]::Round(($counter / $global:servers.Count) * 100)
+        $prct = [Math]::Round(($counter / getFarmServers.Count) * 100)
         if ($prct) {
             Write-Progress -Activity $msg -Status "$addr ($prct %) $(Get-Date)" -PercentComplete $prct
         }
@@ -521,16 +502,16 @@ function LoopRemotePatch($msg, $cmd, $params) {
 		
         # Dynamic open PSSession
         if ($remoteSessionPort -and $remoteSessionSSL) {
-            $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+            $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
         }
         elseif ($remoteSessionPort) {
-            $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
+            $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort
         }
         elseif ($remoteSessionSSL) {
-            $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
+            $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL
         }
         else {
-            $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
+            $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp
         }
 
         # Invoke
@@ -599,7 +580,7 @@ function LoopRemoteCmd($msg, $cmd) {
 	
     # Loop servers
     $counter = 0
-    foreach ($server in $global:servers) {
+    foreach ($server in getFarmServers) {
         Write-Host $server.Address -Fore Yellow
 
         # Script block
@@ -612,7 +593,7 @@ function LoopRemoteCmd($msg, $cmd) {
 	
         # Progress
         $addr = $server.Address
-        $prct = [Math]::Round(($counter / $global:servers.Count) * 100)
+        $prct = [Math]::Round(($counter / getFarmServers.Count) * 100)
         if ($prct) {
             Write-Progress -Activity $msg -Status "$addr ($prct %) $(Get-Date)" -PercentComplete $prct
         }
@@ -638,16 +619,16 @@ function LoopRemoteCmd($msg, $cmd) {
         }
         else {
             if ($remoteSessionPort -and $remoteSessionSSL) {
-                $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+                $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
             }
             elseif ($remoteSessionPort) {
-                $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
+                $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort
             }
             elseif ($remoteSessionSSL) {
-                $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
+                $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL
             }
             else {
-                $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
+                $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp
             }
 
             # Invoke
@@ -926,7 +907,7 @@ function ChangeContent($state) {
                     }                
                 }
             }
-            $serverAddress = $global:servers | ForEach-Object { $_.Address }
+            $serverAddress = getFarmServers | ForEach-Object { $_.Address }
             DistributedJobs -scriptBlocks $sb -servers $serverAddress -maxJobs 1 -credentials GetFarmAccountCredentials
             
         }
@@ -1086,7 +1067,7 @@ function ShowVersion() {
     # IIS UP/DOWN Load Balancer
     Write-Host "IIS UP/DOWN Load Balancer"
     $coll = @()
-    $global:servers | ForEach-Object {
+    getFarmServers | ForEach-Object {
         try {
             $addr = $_.Address;
             $root = (Get-Website "Default Web Site").PhysicalPath.ToLower().Replace("%systemdrive%", $env:SystemDrive)
@@ -1168,8 +1149,8 @@ function UpgradeContent() {
     $i = 0
     foreach ($db in $dbs) {
         # Assign to SPServer
-        $mod = $i % $global:servers.count
-        $pc = $global:servers[$mod].Address
+        $mod = $i % getFarmServers.count
+        $pc = getFarmServers[$mod].Address
 		
         # Collect
         $obj = New-Object -TypeName PSObject -Prop (@{"Name" = $db.Name; "Id" = $db.Id; "UpgradePC" = $pc; "JID" = 0; "Status" = "New" })
@@ -1184,21 +1165,21 @@ function UpgradeContent() {
     Get-Job | Remove-Job
 	
     # Open sessions
-    foreach ($server in $global:servers) {
+    foreach ($server in getRemoteServers) {
         $addr = $server.Address
         
         # Dynamic open PSSesion
         if ($remoteSessionPort -and $remoteSessionSSL) {
-            New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL | Out-Null
+            New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL | Out-Null
         }
         elseif ($remoteSessionPort) {
-            New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort | Out-Null
+            New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort | Out-Null
         }
         elseif ($remoteSessionSSL) {
-            New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL | Out-Null
+            New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL | Out-Null
         }
         else {
-            New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp | Out-Null
+            New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp | Out-Null
         }
     }
 
@@ -1225,7 +1206,7 @@ function UpgradeContent() {
         }
 		
         # Ensure workers are active
-        foreach ($server in $global:servers) {
+        foreach ($server in getFarmServers) {
             # Count active workers per server
             $active = $track | Where-Object { $_.Status -eq "InProgress" -and $_.UpgradePC -eq $server.Address }
             if ($active.count -lt $maxWorkers) {
@@ -1258,16 +1239,16 @@ function UpgradeContent() {
                     if (!$session) {
                         # Dynamic open PSSession
                         if ($remoteSessionPort -and $remoteSessionSSL) {
-                            $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+                            $session = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
                         }
                         elseif ($remoteSessionPort) {
-                            $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
+                            $session = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort
                         }
                         elseif ($remoteSessionSSL) {
-                            $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
+                            $session = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL
                         }
                         else {
-                            $session = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
+                            $session = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp
                         }
                     }
                     $result = Invoke-Command $remoteCmd -Session $session -AsJob
@@ -1579,21 +1560,21 @@ function VerifyRemotePS() {
     try {
         Write-Host "Test Remote PowerShell " -Fore Green
         # Loop servers
-        foreach ($server in $global:servers) {
+        foreach ($server in getFarmServers) {
             $addr = $server.Address
             if ($addr -ne $env:computername) {
                 # Dynamic open PSSession
                 if ($remoteSessionPort -and $remoteSessionSSL) {
-                    $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
                 }
                 elseif ($remoteSessionPort) {
-                    $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
+                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort
                 }
                 elseif ($remoteSessionSSL) {
-                    $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
+                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL
                 }
                 else {
-                    $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
+                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp
                 }
             }
         }
@@ -1631,7 +1612,7 @@ function ChangeSPTimer($state) {
     $timerInstance = "Microsoft SharePoint Foundation Timer"  
 
     # Iterate through each server in the farm, and each service in each server
-    foreach ($server in $global:servers) {
+    foreach ($server in getFarmServers) {
         foreach ($instance in $server.ServiceInstances) {
             # If the server has the timer service then stop the service
             if ($instance.TypeName -eq $timerInstance) {
@@ -1698,7 +1679,7 @@ function DeleteXmlCache() {
     Write-Host -foregroundcolor DarkGray "Delete xml files"
 
     # Iterate through each server in the farm, and each service in each server
-    foreach ($server in $global:servers) {
+    foreach ($server in getFarmServers) {
         foreach ($instance in $server.ServiceInstances) {
             # If the server has the timer service delete the XML files from the config cache
             if ($instance.TypeName -eq $timerServiceInstanceName) {
@@ -1727,8 +1708,8 @@ function TestRemotePS() {
     #ReadIISPW
 
     # Connect
-    foreach ($f in $global:servers) {
-        New-PSSession -ComputerName $f.Address -Authentication Credssp -Credential $global:cred
+    foreach ($f in getRemoteServers) {
+        New-PSSession -ComputerName $f.Address -Authentication Credssp -Credential GetFarmAccountCredentials
     }
 
     # WMI Uptime
@@ -1741,13 +1722,13 @@ function TestRemotePS() {
 
     # Display
     Get-PSSession | Format-Table -AutoSize
-    if ($global:servers.Count -eq (Get-PSSession).Count) {
+    if (getRemoteServers.Count -eq (Get-PSSession).Count) {
         $color = "Green"
     }
     else {
         $color = "Red"
     }
-    Write-Host "Farm Servers : $($global:servers.Count)" -Fore $color
+    Write-Host "Farm Servers : $(getFarmServers.Count)" -Fore $color
     Write-Host "Sessions     : $((Get-PSSession).Count)" -Fore $color
 }
 
@@ -1790,7 +1771,7 @@ function AppOffline ($state) {
     $ao = "app_offline.htm"
     $folders = Get-SPWebApplication | ForEach-Object { $_.IIsSettings[0].Path.FullName }
     # Start Jobs
-    foreach ($server in $global:servers) {
+    foreach ($server in getFarmServers) {
         $addr = $server.Address
         if ($addr -ne $env:computername) {
             foreach ($f in $folders) {
@@ -1828,21 +1809,23 @@ function Main() {
     Get-PSSession | Remove-PSSession -Confirm:$false
 
     # Local farm servers
-    $global:servers = Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
+    # $global:servers = Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
     $remoteRoot = MakeRemote $root
 
     # List - Target servers
+    <#
     if ($targetServers) {
         $global:servers = Get-SPServer | Where-Object { $targetServers -contains $_.Name } | Sort-Object Address
     }
+    #>
 
     # Halt if no servers detected
-    if (($global:servers).Count -eq 0) {
+    if ((getFarmServers).Count -eq 0) {
         Write-Host "HALT - POWERSHELL ERROR - No SharePoint servers detected.  Close this window and run from new window." -Fore Red
         Exit        
     }
     else {
-        Write-Host "Servers Online: $($global:servers.Count)"   
+        Write-Host "Servers Online: $(getFarmServers.Count)"   
     }   
     
 
@@ -1945,7 +1928,7 @@ function Main() {
     # Read IIS Password
     #ReadIISPW
 
-    $global:cred = GetFarmAccountCredentials
+    #$global:cred = GetFarmAccountCredentials
 
     # Verify Remote PowerShell
     if (-not (VerifyRemotePS)) {
