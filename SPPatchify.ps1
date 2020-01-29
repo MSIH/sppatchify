@@ -151,7 +151,7 @@ function CopyMedia($action = "Copy") {
     Get-PSSession | Remove-PSSession -Confirm:$false
 
     # Start Jobs
-    foreach ($server in $global:servers) {
+    foreach ($server in getRemoteServers) {
         $addr = $server.Address
         if ($addr -ne $env:computername) {
             # Dynamic command
@@ -166,7 +166,7 @@ function CopyMedia($action = "Copy") {
 
     $counter = 0
     do {
-        foreach ($server in $global:servers) {
+        foreach ($server in getRemoteServers) {
             # Progress
             if (Get-Job) {
                 $prct = [Math]::Round(($counter / (Get-Job).Count) * 100)
@@ -616,24 +616,7 @@ function LoopRemoteCmd($msg, $cmd) {
         if ($prct) {
             Write-Progress -Activity $msg -Status "$addr ($prct %) $(Get-Date)" -PercentComplete $prct
         }
-        $counter++
-
-        # Remote Posh
-        Write-Host ">> invoke on $addr" -Fore "Green"
-        
-        # Dynamic open PSSesion
-        if ($remoteSessionPort -and $remoteSessionSSL) {
-            $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
-        }
-        elseif ($remoteSessionPort) {
-            $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
-        }
-        elseif ($remoteSessionSSL) {
-            $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
-        }
-        else {
-            $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
-        }
+        $counter++        
 
         # Merge script block array
         $mergeSb = $sb
@@ -645,11 +628,34 @@ function LoopRemoteCmd($msg, $cmd) {
             $mergeSb = [Scriptblock]::Create($mergeCmd)
         }
 
-        # Invoke
-        Start-Sleep 3
-        if ($remote) {
+        # Remote Posh
+        Write-Host ">> invoke on $addr" -Fore "Green"
+        
+        # Dynamic open PSSesion
+        if ($env:computername -eq $addr) {
             Write-Host $mergeSb.ToString()
-            Invoke-Command -Session $remote -ScriptBlock $mergeSb
+            Invoke-Command  -ScriptBlock $mergeSb
+        }
+        else {
+            if ($remoteSessionPort -and $remoteSessionSSL) {
+                $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort -UseSSL
+            }
+            elseif ($remoteSessionPort) {
+                $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -Port $remoteSessionPort
+            }
+            elseif ($remoteSessionSSL) {
+                $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp -UseSSL
+            }
+            else {
+                $remote = New-PSSession -ComputerName $addr -Credential $global:cred -Authentication Credssp
+            }
+
+            # Invoke
+            Start-Sleep 3
+            if ($remote) {
+                Write-Host $mergeSb.ToString()
+                Invoke-Command -Session $remote -ScriptBlock $mergeSb
+            }
         }
         Write-Host "<< complete on $addr" -Fore "Green"
     }
@@ -933,7 +939,11 @@ function ChangeContent($state) {
 
 #region general
 function getRemoteServers() {
-    return $global:servers | Where-Object { $_.Address -ne $env:computername }
+    return getFarmServers | Where-Object { $_.Address -ne $env:computername }
+}
+
+function getFarmServers() {
+    return Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
 }
 
 function EnablePSRemoting() {
@@ -988,7 +998,7 @@ function ReadIISPW {
     Write-Host "Logged in as $domain\$user"
 	
     # Start IISAdm` if needed
-    $iisadmin = Get-Service IISADMIN
+    $iisadmin = Get-Service IISADMIN -ErrorAction SilentlyContinue | Out-Null
     if ($iisadmin.Status -ne "Running") {
         # Set Automatic and Start
         Set-Service -Name IISADMIN -StartupType Automatic -ErrorAction SilentlyContinue
@@ -1714,7 +1724,7 @@ function DeleteXmlCache() {
 function TestRemotePS() {
     # Prepare
     Get-PSSession | Remove-PSSession -Confirm:$false
-    ReadIISPW
+    #ReadIISPW
 
     # Connect
     foreach ($f in $global:servers) {
@@ -1933,7 +1943,9 @@ function Main() {
 
     
     # Read IIS Password
-    ReadIISPW
+    #ReadIISPW
+
+    $global:cred = GetFarmAccountCredentials
 
     # Verify Remote PowerShell
     if (-not (VerifyRemotePS)) {
@@ -1993,9 +2005,14 @@ function Main() {
         # create scheduled task to run CU
         # watch and update web page
         # uses CredSSP remoting    
+        PauseSharePointSearch
         RunAndInstallCU
         WaitReboot
-        VerifyCUInstalledOnAllServers        
+        VerifyCUInstalledOnAllServers         
+        RunConfigWizard        
+        UpgradeContent
+        StartSharePointSearch
+        DisplayCA        
     } 
 
     if ($DismountContentDatabase) {   
@@ -2023,8 +2040,7 @@ function Main() {
         UpgradeContent
     } 
 
-    if ($Standard) {
-        PatchRemoval
+    if ($Standard) {        
         PatchMenu    
         CopyMedia "Copy"
         PauseSharePointSearch

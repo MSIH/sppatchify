@@ -6,3 +6,5 @@ cd C:\DEPL\Scripts
 .\sppatchify.ps1 -saveServiceInstanceExit
 .\sppatchify.ps1 -reportContentDatabasesExit
 .\sppatchify.ps1 -ClearCacheIni
+.\sppatchify.ps1 -Standard
+
