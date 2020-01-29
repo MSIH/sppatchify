@@ -217,13 +217,14 @@ function RunAndInstallCU() {
     LoopRemoteCmd "Unblock EXE on " "gci '$root\media\*' | Unblock-File -Confirm:`$false -ErrorAction SilentlyContinue"
 
     # Build CMD
-    $files = Get-ChildItem "$root\media\*.exe" | Sort-Object Name
+    $files = Get-ChildItem "$root\media\*.exe" -Recurse | Sort-Object Name
     foreach ($f in $files) {
         # Display patch name
         $name = $f.Name
         Write-Host $name -Fore Yellow
         $patchName = $name.replace(".exe", "")
-        $cmd = "$root\media\$name"
+        $cmd = $f.FullName
+        Write-Host $cmd -Fore Yellow
         $params = "/passive /forcerestart /log:""$root\log\msp\$name.log"""
         if ($bypass) {
             $params += " PACKAGE.BYPASS.DETECTION.CHECK=1"
@@ -234,30 +235,55 @@ function RunAndInstallCU() {
         foreach ($server in getFarmServers) {
             # Local PC - No reboot
             $addr = $server.Address
+            Write-Host $addr 
             if ($addr -eq $env:computername) {
                 $params = $params.Replace("forcerestart", "norestart")
+                # Remove SCHTASK if found
+                $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+                if ($found) {
+                    $found | Unregister-ScheduledTask -Confirm:$false 
+                }
+
+                # New SCHTASK parameters
+                $user = "System"
+                $folder = Split-Path $f
+                $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder 
+                $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+
+                # Create SCHTASK
+                Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
+                Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p 
+
+                # Event log START
+                New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
+                Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr
+                Start-ScheduledTask -TaskName $taskName 
+
+
             }
+            else {
 
-            # Remove SCHTASK if found
-            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
-            if ($found) {
-                $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
+                # Remove SCHTASK if found
+                $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
+                if ($found) {
+                    $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
+                }
+
+                # New SCHTASK parameters
+                $user = "System"
+                $folder = Split-Path $f
+                $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder -CimSession $addr
+                $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+
+                # Create SCHTASK
+                Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
+                Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -CimSession $addr
+
+                # Event log START
+                New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
+                Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr
+                Start-ScheduledTask -TaskName $taskName -CimSession $addr
             }
-
-            # New SCHTASK parameters
-            $user = "System"
-            $folder = Split-Path $f
-            $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder -CimSession $addr
-            $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
-
-            # Create SCHTASK
-            Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
-            Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -CimSession $addr
-
-            # Event log START
-            New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
-            Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr
-            Start-ScheduledTask -TaskName $taskName -CimSession $addr
         }
 
         # Watch EXE binary complete
@@ -289,7 +315,7 @@ function WaitEXE($patchName) {
         foreach ($server in getFarmServers) {	
             # Progress
             $addr = $server.Address
-            $prct = [Math]::Round(($counter / getFarmServers.Count) * 100)
+            $prct = [Math]::Round(($counter / (getFarmServers).Count) * 100)
             if ($prct) {
                 Write-Progress -Activity "Wait EXE ($prct %) $(Get-Date)" -Status $addr -PercentComplete $prct
             }
@@ -307,7 +333,11 @@ function WaitEXE($patchName) {
                 # Priority (High) from https://gallery.technet.microsoft.com/scriptcenter/Set-the-process-priority-9826a55f
                 $cmd = "`$proc = Get-Process -Name ""$patchName"" -ErrorAction SilentlyContinue; if (`$proc) { if (`$proc.PriorityClass.ToString() -ne ""High"") {`$proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::HIGH}}"
                 $sb = [Scriptblock]::Create($cmd)
-                Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb
+                if ($addr -eq $env:computername) {
+                Invoke-Command  -ScriptBlock $sb
+                 } else {
+                    Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb
+                        } 
 
                 # Measure EXE
                 $proc | Select-Object Id, HandleCount, WorkingSet, PrivateMemorySize
@@ -315,7 +345,12 @@ function WaitEXE($patchName) {
                 # Count MSPLOG files
                 $cmd = "`$f=Get-ChildItem ""$logFolder\*MSPLOG*"";`$c=`$f.count;`$l=(`$f|sort last -desc|select -first 1).LastWriteTime;`$s=`$env:computername;New-Object -TypeName PSObject -Prop (@{""Server""=`$s;""Count""=`$c;""LastWriteTime""=`$l})"
                 $sb = [Scriptblock]::Create($cmd)
-                $result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb
+                if ($addr -eq $env:computername) {
+                $result =Invoke-Command  -ScriptBlock $sb
+                 } else {
+                   $result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb
+                        } 
+              
                 $progress = "Server: $($result.Server)  /  MSP Count: $($result.Count)  /  Last Write: $($result.LastWriteTime)"
                 Write-Progress $progress
             }
@@ -324,7 +359,12 @@ function WaitEXE($patchName) {
 			
             # Check Schtask Exit Code
             Start-Sleep 3
-            $task = Get-ScheduledTask -TaskName $taskName -CimSession $addr
+            if ($addr -eq $env:computername) { 
+                $task = Get-ScheduledTask -TaskName $taskName 
+            }else { 
+                $task = Get-ScheduledTask -TaskName $taskName -CimSession $addr
+            }
+           
             $info = $task | Get-ScheduledTaskInfo
             $exit = $info.LastTaskResult
             if ($exit -eq 0) {
@@ -349,7 +389,13 @@ function WaitEXE($patchName) {
 
                     # Run
                     Write-Host "RETRY ATTEMPT  # $attempt of $maxattempt" -Fore White -Backgroundcolor Red
-                    Start-ScheduledTask -TaskName $taskName -CimSession $addr
+
+                    if ($addr -eq $env:computername) { 
+                        Start-ScheduledTask -TaskName $taskName -
+                    }
+                    else { 
+                        Start-ScheduledTask -TaskName $taskName -CimSession $addr
+                    }                    
                 }
             }
         }
@@ -373,7 +419,7 @@ function WaitReboot() {
         $addr = $server.Address
         Write-Host $addr -Fore Yellow
         if ($addr -ne $env:COMPUTERNAME) {
-            $prct = [Math]::Round(($counter / getFarmServers.Count) * 100)
+            $prct = [Math]::Round(($counter / (getFarmServers).Count) * 100)
             if ($prct) {
                 Write-Progress -Activity "Waiting for machine ($prct %) $(Get-Date)" -Status $addr -PercentComplete $prct
             }
@@ -491,7 +537,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
         }
 	
         # Progress
-        $prct = [Math]::Round(($counter / getFarmServers.Count) * 100)
+        $prct = [Math]::Round(($counter / (getFarmServers).Count) * 100)
         if ($prct) {
             Write-Progress -Activity $msg -Status "$addr ($prct %) $(Get-Date)" -PercentComplete $prct
         }
@@ -593,7 +639,7 @@ function LoopRemoteCmd($msg, $cmd) {
 	
         # Progress
         $addr = $server.Address
-        $prct = [Math]::Round(($counter / getFarmServers.Count) * 100)
+        $prct = [Math]::Round(($counter / (getFarmServers).Count) * 100)
         if ($prct) {
             Write-Progress -Activity $msg -Status "$addr ($prct %) $(Get-Date)" -PercentComplete $prct
         }
@@ -737,13 +783,13 @@ function ChangeServices($state) {
 
 function PauseSharePointSearch() {
     Write-Host "Pause search crawler ..."    
-    $ssa = Get-SPEenterpriseSearchServiceApplication         
+    $ssa = Get-SPEnterpriseSearchServiceApplication  
     $ssa.pause()    
 }
 
 function StartSharePointSearch() {
     Write-Host "Start search crawler ..."    
-    $ssa = Get-SPEenterpriseSearchServiceApplication         
+    $ssa = Get-SPEnterpriseSearchServiceApplication         
     $ssa.resume()     
 }
 
@@ -1149,7 +1195,7 @@ function UpgradeContent() {
     $i = 0
     foreach ($db in $dbs) {
         # Assign to SPServer
-        $mod = $i % getFarmServers.count
+        $mod = $i % (getFarmServers).count
         $pc = getFarmServers[$mod].Address
 		
         # Collect
@@ -1556,6 +1602,14 @@ function StartServiceInst() {
 }
 #endregion
 
+function IsLocalServer($serverName) {
+    if ($serverName.ToLower() -eq ($env:computername).ToLower()) {
+        return Test
+    } else{
+        return false
+    }
+}
+
 function VerifyRemotePS() {
     try {
         Write-Host "Test Remote PowerShell " -Fore Green
@@ -1728,7 +1782,7 @@ function TestRemotePS() {
     else {
         $color = "Red"
     }
-    Write-Host "Farm Servers : $(getFarmServers.Count)" -Fore $color
+    Write-Host "Farm Servers : $((getFarmServers).Count)" -Fore $color
     Write-Host "Sessions     : $((Get-PSSession).Count)" -Fore $color
 }
 
@@ -1825,7 +1879,7 @@ function Main() {
         Exit        
     }
     else {
-        Write-Host "Servers Online: $(getFarmServers.Count)"   
+        Write-Host "Servers Online: $((getFarmServers).Count)"   
     }   
     
 
@@ -1992,8 +2046,7 @@ function Main() {
         RunAndInstallCU
         WaitReboot
         VerifyCUInstalledOnAllServers         
-        RunConfigWizard        
-        UpgradeContent
+        RunConfigWizard 
         StartSharePointSearch
         DisplayCA        
     } 
@@ -2030,8 +2083,7 @@ function Main() {
         RunAndInstallCU
         WaitReboot
         VerifyCUInstalledOnAllServers         
-        RunConfigWizard        
-        UpgradeContent
+        RunConfigWizard 
         StartSharePointSearch
         DisplayCA
     }
