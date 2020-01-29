@@ -2203,11 +2203,14 @@ function Main() {
     FinalCleanUp
     Write-Host "DONE"
     # LocalReboot
-    if ($Standard) {
-        write-host "reboot"
-        #Restart-Computer -Force
+    
+        write-host "rebooting servers"
+        foreach ($server in getFarmServers) {
+            $addr = $server.Address            
+                Write-Host "Reboot $($addr)" -Fore Yellow
+                Restart-Computer -ComputerName $addr            
+        }
     }
-}
 
 function AutoSPSourceBuilder() {
     <#PSScriptInfo
