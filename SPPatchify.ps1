@@ -138,7 +138,7 @@ function CopyMedia($action = "Copy") {
             # Dynamic command
             $dest = "\\$addr\$remoteRoot\media"
             mkdir $dest -Force -ErrorAction SilentlyContinue | Out-Null;
-            ROBOCOPY ""$root\media"" ""$dest"" /Z /MIR /W:0 /R:0
+            ROBOCOPY ""$root\media"" ""$dest"" /Z /S /W:0 /R:0
         }
     }
 
@@ -291,7 +291,7 @@ function RunAndInstallCU() {
     }
 	
     # SharePoint 2016 Force Reboot
-    if ($ver -eq 16) {
+    <#if ($ver -eq 16) {
         foreach ($server in getFarmServers) {
             $addr = $server.Address
             if ($addr -ne $env:computername) {
@@ -299,7 +299,7 @@ function RunAndInstallCU() {
                 Restart-Computer -ComputerName $addr
             }
         }
-    }
+    }#>
 }
 
 function WaitEXE($patchName) {
@@ -2041,8 +2041,9 @@ function Main() {
     if ($RunAndInstallCU) {   
         # create scheduled task to run CU
         # watch and update web page
-        # uses CredSSP remoting    
-        PauseSharePointSearch
+        # uses CredSSP remoting
+        # CopyMedia "Copy"    
+        # PauseSharePointSearch
         RunAndInstallCU
         WaitReboot
         VerifyCUInstalledOnAllServers         
