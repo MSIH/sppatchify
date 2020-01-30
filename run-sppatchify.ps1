@@ -7,6 +7,7 @@ cd D:\Artifacts\Software\sppatchify
 .\sppatchify.ps1 -reportContentDatabasesExit
 .\sppatchify.ps1 -ClearCacheIni
 .\sppatchify.ps1 -Standard
+.\sppatchify.ps1 -RunAndInstallCU
 <#
  -- AutoSPSourceBuilder SharePoint Update Download/Integration Utility --
 Start-BitsTransfer : The operation being requested was not performed because the user has not logged on to the network. The specified service does not exist. (Exception from HRESULT: 0x800704DD)
