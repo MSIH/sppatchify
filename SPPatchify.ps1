@@ -138,7 +138,7 @@ function CopyMedia($action = "Copy") {
             # Dynamic command
             $dest = "\\$addr\$remoteRoot\media"
             mkdir $dest -Force -ErrorAction SilentlyContinue | Out-Null;
-            ROBOCOPY ""$root\media"" ""$dest"" /Z /MIR /W:0 /R:0
+            ROBOCOPY ""$root\media"" ""$dest"" /Z /S /W:0 /R:0
         }
     }
 
@@ -291,7 +291,7 @@ function RunAndInstallCU() {
     }
 	
     # SharePoint 2016 Force Reboot
-    if ($ver -eq 16) {
+    <#if ($ver -eq 16) {
         foreach ($server in getFarmServers) {
             $addr = $server.Address
             if ($addr -ne $env:computername) {
@@ -299,7 +299,7 @@ function RunAndInstallCU() {
                 Restart-Computer -ComputerName $addr
             }
         }
-    }
+    }#>
 }
 
 function WaitEXE($patchName) {
@@ -429,16 +429,16 @@ function WaitReboot() {
             do {
                 # Dynamic open PSSession
                 if ($remoteSessionPort -and $remoteSessionSSL) {
-                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
+                    $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort -UseSSL
                 }
                 elseif ($remoteSessionPort) {
-                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort
+                    $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort
                 }
                 elseif ($remoteSessionSSL) {
-                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL
+                    $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -UseSSL
                 }
                 else {
-                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp
+                    $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp
                 }
 
 
@@ -548,16 +548,16 @@ function LoopRemotePatch($msg, $cmd, $params) {
 		
         # Dynamic open PSSession
         if ($remoteSessionPort -and $remoteSessionSSL) {
-            $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
+            $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort -UseSSL
         }
         elseif ($remoteSessionPort) {
-            $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort
+            $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort
         }
         elseif ($remoteSessionSSL) {
-            $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL
+            $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -UseSSL
         }
         else {
-            $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp
+            $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp
         }
 
         # Invoke
@@ -665,16 +665,16 @@ function LoopRemoteCmd($msg, $cmd) {
         }
         else {
             if ($remoteSessionPort -and $remoteSessionSSL) {
-                $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
+                $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort -UseSSL
             }
             elseif ($remoteSessionPort) {
-                $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort
+                $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort
             }
             elseif ($remoteSessionSSL) {
-                $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL
+                $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -UseSSL
             }
             else {
-                $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp
+                $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp
             }
 
             # Invoke
@@ -954,7 +954,7 @@ function ChangeContent($state) {
                 }
             }
             $serverAddress = getFarmServers | ForEach-Object { $_.Address }
-            DistributedJobs -scriptBlocks $sb -servers $serverAddress -maxJobs 1 -credentials GetFarmAccountCredentials
+            DistributedJobs -scriptBlocks $sb -servers $serverAddress -maxJobs 1 -credentials (GetFarmAccountCredentials)
             
         }
         else {
@@ -1216,16 +1216,16 @@ function UpgradeContent() {
         
         # Dynamic open PSSesion
         if ($remoteSessionPort -and $remoteSessionSSL) {
-            New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL | Out-Null
+            New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort -UseSSL | Out-Null
         }
         elseif ($remoteSessionPort) {
-            New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort | Out-Null
+            New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort | Out-Null
         }
         elseif ($remoteSessionSSL) {
-            New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL | Out-Null
+            New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -UseSSL | Out-Null
         }
         else {
-            New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp | Out-Null
+            New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp | Out-Null
         }
     }
 
@@ -1285,16 +1285,16 @@ function UpgradeContent() {
                     if (!$session) {
                         # Dynamic open PSSession
                         if ($remoteSessionPort -and $remoteSessionSSL) {
-                            $session = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
+                            $session = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort -UseSSL
                         }
                         elseif ($remoteSessionPort) {
-                            $session = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort
+                            $session = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort
                         }
                         elseif ($remoteSessionSSL) {
-                            $session = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL
+                            $session = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -UseSSL
                         }
                         else {
-                            $session = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp
+                            $session = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp
                         }
                     }
                     $result = Invoke-Command $remoteCmd -Session $session -AsJob
@@ -1392,7 +1392,7 @@ function GetMonthInt($name) {
 }
 function PatchRemoval() {
     # Remove patch media
-    $files = Get-ChildItem "$root\media\*.exe" -ErrorAction SilentlyContinue #| Out-Null
+    $files = Get-ChildItem "$root\media\*.exe" -Recurse -ErrorAction SilentlyContinue #| Out-Null
     $files | Format-Table -AutoSize
     $files | Remove-Item -Confirm:$false -Force
 }
@@ -1619,16 +1619,16 @@ function VerifyRemotePS() {
             if ($addr -ne $env:computername) {
                 # Dynamic open PSSession
                 if ($remoteSessionPort -and $remoteSessionSSL) {
-                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort -UseSSL
+                    $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort -UseSSL
                 }
                 elseif ($remoteSessionPort) {
-                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -Port $remoteSessionPort
+                    $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -Port $remoteSessionPort
                 }
                 elseif ($remoteSessionSSL) {
-                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp -UseSSL
+                    $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp -UseSSL
                 }
                 else {
-                    $remote = New-PSSession -ComputerName $addr -Credential GetFarmAccountCredentials -Authentication Credssp
+                    $remote = New-PSSession -ComputerName $addr -Credential (GetFarmAccountCredentials) -Authentication Credssp
                 }
             }
         }
@@ -1763,7 +1763,7 @@ function TestRemotePS() {
 
     # Connect
     foreach ($f in getRemoteServers) {
-        New-PSSession -ComputerName $f.Address -Authentication Credssp -Credential GetFarmAccountCredentials
+        New-PSSession -ComputerName $f.Address -Authentication Credssp -Credential (GetFarmAccountCredentials)
     }
 
     # WMI Uptime
@@ -1982,7 +1982,7 @@ function Main() {
     # Read IIS Password
     #ReadIISPW
 
-    #$global:cred = GetFarmAccountCredentials
+    #$global:cred = (GetFarmAccountCredentials)
 
     # Verify Remote PowerShell
     if (-not (VerifyRemotePS)) {
@@ -2041,8 +2041,9 @@ function Main() {
     if ($RunAndInstallCU) {   
         # create scheduled task to run CU
         # watch and update web page
-        # uses CredSSP remoting    
-        PauseSharePointSearch
+        # uses CredSSP remoting
+        # CopyMedia "Copy"    
+        # PauseSharePointSearch
         RunAndInstallCU
         WaitReboot
         VerifyCUInstalledOnAllServers         
@@ -2202,6 +2203,8 @@ function Main() {
     CalcDuration
     FinalCleanUp
     Write-Host "DONE"
+
+    if($Standard -or $RunAndInstallCU){
     # LocalReboot
     
         write-host "rebooting servers"
@@ -2211,6 +2214,7 @@ function Main() {
                 Restart-Computer -ComputerName $addr            
         }
     }
+}
 
 function AutoSPSourceBuilder() {
     <#PSScriptInfo
