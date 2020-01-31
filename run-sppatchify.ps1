@@ -1,5 +1,6 @@
 cd D:\Artifacts\Software\sppatchify
 .\sppatchify.ps1 -downloadMedia
+.\sppatchify.ps1 -CopyMedia
 .\sppatchify.ps1 -showVersionExit
 .\sppatchify.ps1 -testRemotePSExit
 .\sppatchify.ps1 -productlocalExit
