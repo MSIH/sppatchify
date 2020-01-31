@@ -211,9 +211,11 @@ function RunAndInstallCU() {
     Write-Host "===== RunAndInstallCU ===== $(Get-Date)" -Fore "Yellow"
 
     # Remove MSPLOG
+    Write-Host "===== Remove MSPLOG on ===== $(Get-Date)" -Fore "Yellow"
     LoopRemoteCmd "Remove MSPLOG on " "Remove-Item '$logfolder\msp\*MSPLOG*' -Confirm:`$false -ErrorAction SilentlyContinue"
 
     # Remove MSPLOG
+    Write-Host "===== Unblock EXE on ===== $(Get-Date)" -Fore "Yellow"
     LoopRemoteCmd "Unblock EXE on " "gci '$root\media\*' | Unblock-File -Confirm:`$false -ErrorAction SilentlyContinue"
 
     # Build CMD
@@ -224,7 +226,7 @@ function RunAndInstallCU() {
         Write-Host $name -Fore Yellow
         $patchName = $name.replace(".exe", "")
         $cmd = $f.FullName
-        Write-Host $cmd -Fore Yellow
+        Write-Host "$cmd ===== $(Get-Date)" -Fore "Yellow"
         $params = "/passive /forcerestart /log:""$root\log\msp\$name.log"""
         if ($bypass) {
             $params += " PACKAGE.BYPASS.DETECTION.CHECK=1"
@@ -251,6 +253,7 @@ function RunAndInstallCU() {
                 $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
 
                 # Create SCHTASK
+                
                 Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
                 Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p 
 
@@ -258,7 +261,7 @@ function RunAndInstallCU() {
                 New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
                 Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr
                 Start-ScheduledTask -TaskName $taskName 
-
+                Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
 
             }
             else {
@@ -283,6 +286,7 @@ function RunAndInstallCU() {
                 New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
                 Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr
                 Start-ScheduledTask -TaskName $taskName -CimSession $addr
+                Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
             }
         }
 
@@ -291,7 +295,8 @@ function RunAndInstallCU() {
     }
 	
     # SharePoint 2016 Force Reboot
-    if ($ver -eq 16) {
+    <#if ($ver -eq 16) {
+        Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
         foreach ($server in getFarmServers) {
             $addr = $server.Address
             if ($addr -ne $env:computername) {
@@ -299,7 +304,7 @@ function RunAndInstallCU() {
                 Restart-Computer -ComputerName $addr
             }
         }
-    }
+    }#>
 }
 
 function WaitEXE($patchName) {
@@ -334,10 +339,11 @@ function WaitEXE($patchName) {
                 $cmd = "`$proc = Get-Process -Name ""$patchName"" -ErrorAction SilentlyContinue; if (`$proc) { if (`$proc.PriorityClass.ToString() -ne ""High"") {`$proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::HIGH}}"
                 $sb = [Scriptblock]::Create($cmd)
                 if ($addr -eq $env:computername) {
-                Invoke-Command  -ScriptBlock $sb
-                 } else {
+                    Invoke-Command  -ScriptBlock $sb
+                }
+                else {
                     Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb
-                        } 
+                } 
 
                 # Measure EXE
                 $proc | Select-Object Id, HandleCount, WorkingSet, PrivateMemorySize
@@ -346,10 +352,11 @@ function WaitEXE($patchName) {
                 $cmd = "`$f=Get-ChildItem ""$logFolder\*MSPLOG*"";`$c=`$f.count;`$l=(`$f|sort last -desc|select -first 1).LastWriteTime;`$s=`$env:computername;New-Object -TypeName PSObject -Prop (@{""Server""=`$s;""Count""=`$c;""LastWriteTime""=`$l})"
                 $sb = [Scriptblock]::Create($cmd)
                 if ($addr -eq $env:computername) {
-                $result =Invoke-Command  -ScriptBlock $sb
-                 } else {
-                   $result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb
-                        } 
+                    $result = Invoke-Command  -ScriptBlock $sb
+                }
+                else {
+                    $result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb
+                } 
               
                 $progress = "Server: $($result.Server)  /  MSP Count: $($result.Count)  /  Last Write: $($result.LastWriteTime)"
                 Write-Progress $progress
@@ -361,17 +368,18 @@ function WaitEXE($patchName) {
             Start-Sleep 3
             if ($addr -eq $env:computername) { 
                 $task = Get-ScheduledTask -TaskName $taskName 
-            }else { 
+            }
+            else { 
                 $task = Get-ScheduledTask -TaskName $taskName -CimSession $addr
             }
            
             $info = $task | Get-ScheduledTaskInfo
             $exit = $info.LastTaskResult
             if ($exit -eq 0) {
-                Write-Host "EXIT CODE $exit - $taskName" -Fore White -Backgroundcolor Green
+                Write-Host "EXIT CODE $exit - $taskName $(Get-Date)" -Fore White -Backgroundcolor Green
             }
             else {
-                Write-Host "EXIT CODE $exit - $taskName" -Fore White -Backgroundcolor Red
+                Write-Host "EXIT CODE $exit - $taskName $(Get-Date)" -Fore White -Backgroundcolor Red
             }
 			
             # Event Log
@@ -1605,7 +1613,8 @@ function StartServiceInst() {
 function IsLocalServer($serverName) {
     if ($serverName.ToLower() -eq ($env:computername).ToLower()) {
         return Test
-    } else{
+    }
+    else {
         return false
     }
 }
@@ -2204,13 +2213,13 @@ function Main() {
     Write-Host "DONE"
     # LocalReboot
     
-        write-host "rebooting servers"
-        foreach ($server in getFarmServers) {
-            $addr = $server.Address            
-                Write-Host "Reboot $($addr)" -Fore Yellow
-                Restart-Computer -ComputerName $addr            
-        }
+    write-host "rebooting servers"
+    foreach ($server in getFarmServers) {
+        $addr = $server.Address            
+        Write-Host "Reboot $($addr)" -Fore Yellow
+        Restart-Computer -ComputerName $addr            
     }
+}
 
 function AutoSPSourceBuilder() {
     <#PSScriptInfo
