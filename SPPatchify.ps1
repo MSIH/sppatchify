@@ -213,11 +213,11 @@ function RunAndInstallCU() {
 
     # Remove MSPLOG
     Write-Host "===== Remove MSPLOG on ===== $(Get-Date)" -Fore "Yellow"
-    LoopRemoteCmd "Remove MSPLOG on " "Remove-Item '$logfolder\msp\*MSPLOG*' -Confirm:`$false -ErrorAction SilentlyContinue"
+    LoopRemoteCmd "Remove MSPLOG on " "Remove-Item '$logfolder\msp\*MSPLOG*' -Confirm:`$false -ErrorAction SilentlyContinue" -isJob $true
 
     # Remove MSPLOG
     Write-Host "===== Unblock EXE on ===== $(Get-Date)" -Fore "Yellow"
-    LoopRemoteCmd "Unblock EXE on " "gci '$root\media\*' | Unblock-File -Confirm:`$false -ErrorAction SilentlyContinue"
+    LoopRemoteCmd "Unblock EXE on " "gci '$root\media\*' | Unblock-File -Confirm:`$false -ErrorAction SilentlyContinue" -isJob $true
 
     # Build CMD
     $files = Get-ChildItem "$root\media\*.exe" -Recurse | Sort-Object Name
@@ -339,26 +339,15 @@ function WaitEXE($patchName) {
 
                 # Priority (High) from https://gallery.technet.microsoft.com/scriptcenter/Set-the-process-priority-9826a55f
                 $cmd = "`$proc = Get-Process -Name ""$patchName"" -ErrorAction SilentlyContinue; if (`$proc) { if (`$proc.PriorityClass.ToString() -ne ""High"") {`$proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::HIGH}}"
-                $sb = [Scriptblock]::Create($cmd)
-                if ($addr -eq $env:computername) {
-                    Invoke-Command  -ScriptBlock $sb
-                }
-                else {
-                    Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb
-                } 
-
+                $sb = [Scriptblock]::Create($cmd)        
+                InvokeCommand  -ScriptBlock $sb  -server $addr 
                 # Measure EXE
                 $proc | Select-Object Id, HandleCount, WorkingSet, PrivateMemorySize
 
                 # Count MSPLOG files
                 $cmd = "`$f=Get-ChildItem ""$logFolder\*MSPLOG*"";`$c=`$f.count;`$l=(`$f|sort last -desc|select -first 1).LastWriteTime;`$s=`$env:computername;New-Object -TypeName PSObject -Prop (@{""Server""=`$s;""Count""=`$c;""LastWriteTime""=`$l})"
                 $sb = [Scriptblock]::Create($cmd)
-                if ($addr -eq $env:computername) {
-                    $result = Invoke-Command  -ScriptBlock $sb
-                }
-                else {
-                    $result = Invoke-Command -Session (Get-PSSession) -ScriptBlock $sb
-                } 
+                InvokeCommand  -ScriptBlock $sb  -server $addr  
               
                 $progress = "Server: $($result.Server)  /  MSP Count: $($result.Count)  /  Last Write: $($result.LastWriteTime)"
                 Write-Progress $progress
@@ -438,7 +427,7 @@ function WaitReboot() {
             # Remote PowerShell session
             do {
                 # Dynamic open PSSession                
-                    $remote = OpenRemotePSSession $addr  (GetFarmAccountCredentials) 
+                $remote = GetRemotePSSession $addr  (GetFarmAccountCredentials) 
                 # Display
                 Write-Host "."  -NoNewLine
                 Start-Sleep 5
@@ -545,7 +534,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
         Write-Host ">> invoke on $addr $(Get-Date)" -Fore "Green"
 		
         # Dynamic open PSSession        
-            $remote = OpenRemotePSSession $addr (GetFarmAccountCredentials)        
+        $remote = GetRemotePSSession $addr (GetFarmAccountCredentials)        
 
         # Invoke
         Start-Sleep 3
@@ -562,7 +551,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
     Get-PSSession | Remove-PSSession -Confirm:$false
 }
 
-function OpenRemotePSSession([string]$server, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty ) {
+function GetRemotePSSession([string]$server, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty ) {
     $session = Get-PSSession | Where-Object { $_.ComputerName -eq $server }
     if (!$session) {        
         if ($remoteSessionPort -and $remoteSessionSSL) {
@@ -603,7 +592,7 @@ function OpenRemotePSSession([string]$server, [System.Management.Automation.PSCr
     return $session
 }
 
-function LoopRemoteCmd($msg, $cmd) {
+function LoopRemoteCmd($msg, $cmd, $isJob = $false) {
     if (!$cmd) {
         return
     }
@@ -644,39 +633,47 @@ function LoopRemoteCmd($msg, $cmd) {
 
         # Remote Posh
         Write-Host ">> invoke on $addr $(Get-Date)" -Fore "Green"
-        
-        # Dynamic open PSSesion
-        if ($env:computername -eq $addr) {
-            Write-Host $mergeSb.ToString()
-            Invoke-Command  -ScriptBlock $mergeSb
-        }
-        else {
-            $remote = OpenRemotePSSession $addr (GetFarmAccountCredentials)           
-
-            # Invoke
-            Start-Sleep 3
-            if ($remote) {
-                Write-Host $mergeSb.ToString()
-                Invoke-Command -Session $remote -ScriptBlock $mergeSb
-            }
-        }
+        Start-Sleep 1
+        InvokeCommand -ScriptBlock $mergeSb -server $addr -isJob $isJob    
         Write-Host "<< complete on $addr $(Get-Date)" -Fore "Green"
     }
     Write-Progress -Activity "Completed $(Get-Date)" -Completed
 }
 
-function InvokeCommand($server, $command, $isJob = $false) {
+function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
+    # InvokeCommand -server -command -isJob
     # if local server
     ## invoke command
     # if remote server
     ## get sesscion
     ## invoke command
 
-     if ($env:computername -eq $addr) {
-            Write-Host $mergeSb.ToString()
-            Invoke-Command  -ScriptBlock $mergeSb
+    if ($env:computername -eq $server) {
+        Write-Host $command.ToString()
+        if ($isJob) {
+            Invoke-Command  -ScriptBlock $ScriptBlock -AsJob
         }
+        else {
+            Invoke-Command  -ScriptBlock $ScriptBlock
+        }
+    }
+    else {
+        $session = GetRemotePSSession $server (GetFarmAccountCredentials)
+        if ($session) {
+            if ($isJob) {
+                Invoke-Command  -ScriptBlock $ScriptBlock -AsJob -SessionName $session
+            }
+            else {
+                Invoke-Command  -ScriptBlock $ScriptBlock -SessionName $session
+            }
+        }
+        else {
+            Write-Host "could not invoke, no remote session"
+        }
+    }
 }
+
+
 
 function StopSPDistributedCache() {
     Write-Host "===== StopSPDistributedCache OFF ===== $(Get-Date)" -Fore "Yellow"
@@ -772,10 +769,10 @@ function ChangeServices($state) {
 
 function PauseSharePointSearch() {
 
-     Write-Host "Start pausing search crawler ... ===== $(Get-Date)" -Fore "Yellow" 
+    Write-Host "Start pausing search crawler ... ===== $(Get-Date)" -Fore "Yellow" 
     $ssa = Get-SPEnterpriseSearchServiceApplication  
     $ssa.pause()   
-     Write-Host "search crawler paused... ===== $(Get-Date)" -Fore "Yellow"  
+    Write-Host "search crawler paused... ===== $(Get-Date)" -Fore "Yellow"  
 }
 
 function StartSharePointSearch() {
@@ -870,16 +867,7 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [int]$maxJobs = 1, [
         }
 
         Write-Host "Starting job for $avaialableServer"
-        if ($avaialableServer -ne $env:computername) {
-            $session = OpenRemotePSSession $avaialableServer $credentials   
-            if ($session) {
-                Invoke-Command -ScriptBlock $scriptBlock -Session $session -AsJob 
-            } 
-        }
-        else {
-            Start-Job -ScriptBlock $scriptBlock 
-        }
-        
+        InvokeCommand -server $avaialableServer -command $scriptBlock -isJob $true                
         
         # Progress
         $prct = [Math]::Round(($counter / $scriptBlocks.Count) * 100)
@@ -1207,7 +1195,7 @@ function UpgradeContent() {
         $addr = $server.Address
         
         # Dynamic open PSSesion
-       OpenRemotePSSession $addr (GetFarmAccountCredentials) 
+        GetRemotePSSession $addr (GetFarmAccountCredentials) 
     }
 
     # Monitor and Run loop
@@ -1265,7 +1253,7 @@ function UpgradeContent() {
                     $session = Get-PSSession | Where-Object { $_.ComputerName -like "$pc*" }
                     if (!$session) {
                         # Dynamic open PSSession
-                        $session = OpenRemotePSSession $addr (GetFarmAccountCredentials)                       
+                        $session = GetRemotePSSession $addr (GetFarmAccountCredentials)                       
                     }
                     $result = Invoke-Command $remoteCmd -Session $session -AsJob
 					
@@ -1589,7 +1577,7 @@ function VerifyRemotePS() {
             $addr = $server.Address
             if ($addr -ne $env:computername) {
                 # Dynamic open PSSession               
-                    $remote = OpenRemotePSSession $addr  (GetFarmAccountCredentials)                 
+                $remote = GetRemotePSSession $addr  (GetFarmAccountCredentials)                 
             }
         }
         Write-Host "Succeess" -Fore Green
