@@ -2214,14 +2214,15 @@ function Main() {
     FinalCleanUp
     Write-Host "DONE"
 
-    if($Standard -or $RunAndInstallCU){
-    # LocalReboot
+    if ($Standard -or $RunAndInstallCU) {
+        # LocalReboot
     
-    write-host "rebooting servers"
-    foreach ($server in getFarmServers) {
-        $addr = $server.Address            
-        Write-Host "Reboot $($addr)" -Fore Yellow
-        Restart-Computer -ComputerName $addr            
+        write-host "rebooting servers"
+        foreach ($server in getFarmServers) {
+            $addr = $server.Address            
+            Write-Host "Reboot $($addr)" -Fore Yellow
+            Restart-Computer -ComputerName $addr            
+        }
     }
 }
 
