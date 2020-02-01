@@ -135,6 +135,7 @@ function CopyMedia($action = "Copy") {
     foreach ($server in getRemoteServers) {
         $addr = $server.Address
         if ($addr -ne $env:computername) {
+            Write-Host "===== ROBOCOPY ===== $(Get-Date)" -Fore "Yellow"
             # Dynamic command
             $dest = "\\$addr\$remoteRoot\media"
             mkdir $dest -Force -ErrorAction SilentlyContinue | Out-Null;
@@ -530,6 +531,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
     # Loop servers
     $counter = 0
     foreach ($server in getFarmServers) {
+        
         # Overwrite restart parameter
         $ver = (Get-SPFarm).BuildVersion.Major
         $addr = $server.Address
@@ -553,7 +555,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
         $counter++
 		
         # Remote Posh
-        Write-Host ">> invoke on $addr" -Fore "Green"
+        Write-Host ">> invoke on $addr $(Get-Date)" -Fore "Green"
 		
         # Dynamic open PSSession
         if ($remoteSessionPort -and $remoteSessionSSL) {
@@ -577,7 +579,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
                 Invoke-Command -Session $remote -ScriptBlock $s
             }
         }
-        Write-Host "<< complete on $addr" -Fore "Green"
+        Write-Host "<< complete on $addr $(Get-Date)" -Fore "Green"
     }
     Write-Progress -Activity "Completed $(Get-Date)" -Completed	
     # Clean up
@@ -665,7 +667,7 @@ function LoopRemoteCmd($msg, $cmd) {
         }
 
         # Remote Posh
-        Write-Host ">> invoke on $addr" -Fore "Green"
+        Write-Host ">> invoke on $addr $(Get-Date)" -Fore "Green"
         
         # Dynamic open PSSesion
         if ($env:computername -eq $addr) {
@@ -693,7 +695,7 @@ function LoopRemoteCmd($msg, $cmd) {
                 Invoke-Command -Session $remote -ScriptBlock $mergeSb
             }
         }
-        Write-Host "<< complete on $addr" -Fore "Green"
+        Write-Host "<< complete on $addr $(Get-Date)" -Fore "Green"
     }
     Write-Progress -Activity "Completed $(Get-Date)" -Completed
 }
@@ -791,15 +793,18 @@ function ChangeServices($state) {
 }
 
 function PauseSharePointSearch() {
-    Write-Host "Pause search crawler ..."    
+
+     Write-Host "Start pausing search crawler ... ===== $(Get-Date)" -Fore "Yellow" 
     $ssa = Get-SPEnterpriseSearchServiceApplication  
-    $ssa.pause()    
+    $ssa.pause()   
+     Write-Host "search crawler paused... ===== $(Get-Date)" -Fore "Yellow"  
 }
 
 function StartSharePointSearch() {
-    Write-Host "Start search crawler ..."    
+    Write-Host "Starting search crawler ... ===== $(Get-Date)" -Fore "Yellow"   
     $ssa = Get-SPEnterpriseSearchServiceApplication         
-    $ssa.resume()     
+    $ssa.resume()    
+    Write-Host "Started search crawler ... ===== $(Get-Date)" -Fore "Yellow"     
 }
 
 function RunConfigWizard() {
