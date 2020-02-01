@@ -438,7 +438,7 @@ function WaitReboot() {
             # Remote PowerShell session
             do {
                 # Dynamic open PSSession                
-                    $remote = OpenRemotePSSession $addr  (GetFarmAccountCredentials) 
+                $remote = GetRemotePSSession $addr  (GetFarmAccountCredentials) 
                 # Display
                 Write-Host "."  -NoNewLine
                 Start-Sleep 5
@@ -545,7 +545,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
         Write-Host ">> invoke on $addr $(Get-Date)" -Fore "Green"
 		
         # Dynamic open PSSession        
-            $remote = OpenRemotePSSession $addr (GetFarmAccountCredentials)        
+        $remote = GetRemotePSSession $addr (GetFarmAccountCredentials)        
 
         # Invoke
         Start-Sleep 3
@@ -562,7 +562,7 @@ function LoopRemotePatch($msg, $cmd, $params) {
     Get-PSSession | Remove-PSSession -Confirm:$false
 }
 
-function OpenRemotePSSession([string]$server, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty ) {
+function GetRemotePSSession([string]$server, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty ) {
     $session = Get-PSSession | Where-Object { $_.ComputerName -eq $server }
     if (!$session) {        
         if ($remoteSessionPort -and $remoteSessionSSL) {
@@ -651,7 +651,7 @@ function LoopRemoteCmd($msg, $cmd) {
             Invoke-Command  -ScriptBlock $mergeSb
         }
         else {
-            $remote = OpenRemotePSSession $addr (GetFarmAccountCredentials)           
+            $remote = GetRemotePSSession $addr (GetFarmAccountCredentials)           
 
             # Invoke
             Start-Sleep 3
@@ -672,10 +672,29 @@ function InvokeCommand($server, $command, $isJob = $false) {
     ## get sesscion
     ## invoke command
 
-     if ($env:computername -eq $addr) {
-            Write-Host $mergeSb.ToString()
-            Invoke-Command  -ScriptBlock $mergeSb
+    if ($env:computername -eq $server) {
+        Write-Host $command.ToString()
+        if ($isJob) {
+            Invoke-Command  -ScriptBlock $command -AsJob
         }
+        else {
+            Invoke-Command  -ScriptBlock $command
+        }
+    }
+    else {
+        $session = GetRemotePSSession $server (GetFarmAccountCredentials)
+        if ($session) {
+            if ($isJob) {
+                Invoke-Command  -ScriptBlock $command -AsJob -SessionName $session
+            }
+            else {
+                Invoke-Command  -ScriptBlock $command -SessionName $session
+            }
+        }
+        else{
+            Write-Host "could not invoke, no remote session"
+        }
+    }
 }
 
 function StopSPDistributedCache() {
@@ -772,10 +791,10 @@ function ChangeServices($state) {
 
 function PauseSharePointSearch() {
 
-     Write-Host "Start pausing search crawler ... ===== $(Get-Date)" -Fore "Yellow" 
+    Write-Host "Start pausing search crawler ... ===== $(Get-Date)" -Fore "Yellow" 
     $ssa = Get-SPEnterpriseSearchServiceApplication  
     $ssa.pause()   
-     Write-Host "search crawler paused... ===== $(Get-Date)" -Fore "Yellow"  
+    Write-Host "search crawler paused... ===== $(Get-Date)" -Fore "Yellow"  
 }
 
 function StartSharePointSearch() {
@@ -871,7 +890,7 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [int]$maxJobs = 1, [
 
         Write-Host "Starting job for $avaialableServer"
         if ($avaialableServer -ne $env:computername) {
-            $session = OpenRemotePSSession $avaialableServer $credentials   
+            $session = GetRemotePSSession $avaialableServer $credentials   
             if ($session) {
                 Invoke-Command -ScriptBlock $scriptBlock -Session $session -AsJob 
             } 
@@ -1207,7 +1226,7 @@ function UpgradeContent() {
         $addr = $server.Address
         
         # Dynamic open PSSesion
-       OpenRemotePSSession $addr (GetFarmAccountCredentials) 
+        GetRemotePSSession $addr (GetFarmAccountCredentials) 
     }
 
     # Monitor and Run loop
@@ -1265,7 +1284,7 @@ function UpgradeContent() {
                     $session = Get-PSSession | Where-Object { $_.ComputerName -like "$pc*" }
                     if (!$session) {
                         # Dynamic open PSSession
-                        $session = OpenRemotePSSession $addr (GetFarmAccountCredentials)                       
+                        $session = GetRemotePSSession $addr (GetFarmAccountCredentials)                       
                     }
                     $result = Invoke-Command $remoteCmd -Session $session -AsJob
 					
@@ -1589,7 +1608,7 @@ function VerifyRemotePS() {
             $addr = $server.Address
             if ($addr -ne $env:computername) {
                 # Dynamic open PSSession               
-                    $remote = OpenRemotePSSession $addr  (GetFarmAccountCredentials)                 
+                $remote = GetRemotePSSession $addr  (GetFarmAccountCredentials)                 
             }
         }
         Write-Host "Succeess" -Fore Green
