@@ -1398,8 +1398,8 @@ function PatchMenu() {
     
     Write-Host " - SharePoint $sharePointVersion selected."
     $Destination = AutoSPSourceBuilder -UpdateLocation "$root\media" -SharePointVersion $sharePointVersion
-    $Destination 
-    Get-ChildItem -Path $Destination -Recurse -File $Destination | Copy-Item -Destination $root\media 
+    #$Destination 
+    #Get-ChildItem -Path $Destination -Recurse -File $Destination | Copy-Item -Destination $root\media 
     #Get-ChildItem -Path $root\media -Recurse -Directory | Remove-Item 
     <#
 
