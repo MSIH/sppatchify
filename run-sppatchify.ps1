@@ -1,5 +1,5 @@
 cd D:\Artifacts\Software\sppatchify
-.\sppatchify.ps1 -downloadMedia
+.\sppatchify.ps1 -downloadMedia -downloadVersion 2019
 .\sppatchify.ps1 -CopyMedia
 .\sppatchify.ps1 -showVersionExit
 .\sppatchify.ps1 -testRemotePSExit
