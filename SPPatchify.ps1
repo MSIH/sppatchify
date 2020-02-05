@@ -648,8 +648,14 @@ function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
     ## get sesscion
     ## invoke command
 
+    # Script block
+    if ($ScriptBlock.GetType().Name -eq "String") {
+        $ScriptBlock = [ScriptBlock]::Create($ScriptBlock)
+    }
+    
+
     if ($env:computername -eq $server) {
-        Write-Host $command.ToString()
+        Write-Host $ScriptBlock
         if ($isJob) {
             Invoke-Command  -ScriptBlock $ScriptBlock -AsJob
         }
@@ -661,10 +667,10 @@ function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
         $session = GetRemotePSSession $server (GetFarmAccountCredentials)
         if ($session) {
             if ($isJob) {
-                Invoke-Command  -ScriptBlock $ScriptBlock -AsJob -SessionName $session
+                Invoke-Command  -ScriptBlock $ScriptBlock -AsJob -Session $session
             }
             else {
-                Invoke-Command  -ScriptBlock $ScriptBlock -SessionName $session
+                Invoke-Command  -ScriptBlock $ScriptBlock -Session $session
             }
         }
         else {
@@ -823,7 +829,7 @@ function ReportContentDatabases() {
 }
 
 
-function DistributedJobs($scriptBlocks, [string[]]$servers, [int]$maxJobs = 1, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty) {
+function DistributedJobs2($scriptBlocks, [string[]]$servers, [int]$maxJobs = 1, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty) {
     
     if (!$servers -or !$scriptBlocks) {
         return
@@ -900,7 +906,7 @@ function ChangeContent($state) {
     [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SharePoint") | Out-Null
     $c = (Get-SPContentDatabase).Count
     Write-Host "Content Databases Online: $c"
-
+    $sb =@()
     if (!$state) {
         # Remove content database
         $dbs = Get-SPContentDatabase
@@ -934,7 +940,7 @@ function ChangeContent($state) {
                 }
             }
             $serverAddress = getFarmServers | ForEach-Object { $_.Address }
-            DistributedJobs -scriptBlocks $sb -servers $serverAddress -maxJobs 1 -credentials (GetFarmAccountCredentials)
+            DistributedJobs -scriptBlocks $sb -servers $serverAddress -credentials (GetFarmAccountCredentials)
             
         }
         else {
@@ -1397,7 +1403,7 @@ function PatchMenu() {
     }
     
     Write-Host " - SharePoint $sharePointVersion selected."
-    $Destination = AutoSPSourceBuilder -UpdateLocation "$root\media" -SharePointVersion $sharePointVersion
+    $Destination = AutoSPSourceBuilder -UpdateLocation "$root\media" -SharePointVersion $sharePointVersion -Destination "$root\media"
     #$Destination 
     #Get-ChildItem -Path $Destination -Recurse -File $Destination | Copy-Item -Destination $root\media 
     #Get-ChildItem -Path $root\media -Recurse -Directory | Remove-Item 
@@ -3197,26 +3203,20 @@ function AutoSPSourceBuilder() {
     Return "$UpdateLocation\$spServicePackSubfolder"
 }
 
-function distribute($servers, $jobs) {
-    $servers = "WBSSP201902", "WBSSP201901"
-    $data = $databases = Get-SPContentDatabase | select name
-    $data = [System.Collections.ArrayList]$data 
-    #$data = New-Object System.Collections.ArrayList
-    #$data.AddRange(@("param1", "param2", "param3", "param4", "param5", "param6", "param7", "param8", "param9", "param10", "para11"))
-    $jobs = New-Object System.Collections.ArrayList
-
-    function GetFarmAccountCredentials() {
-        $farmAccount = (Get-SPFarm).DefaultServiceAccount.Name
-        import-Module WebAdministration
-        $farmAccountPassword = (Get-ChildItem IIS:\AppPools | Where-Object { $_.processModel.userName -eq $farmAccount })[0].processModel.password
-
-        if ($farmAccount -and $farmAccountPassword ) {
-            $securePassword = $farmAccountPassword | ConvertTo-SecureString -AsPlainText -Force
-            $PSCredential = New-Object System.Management.Automation.PSCredential -ArgumentList $farmAccount, $securePassword
-        }    
+# function distribute($servers, $jobs) {
+    function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.Automation.PSCredential]$credentials = (GetFarmAccountCredentials)) {
     
-        return $PSCredential      
-    }
+        if (!$servers -or !$scriptBlocks) {
+            return
+        }   
+        Get-Job | Remove-Job 
+        Get-PSSession | Remove-PSSession
+    # $servers = "WBSSP201902", "WBSSP201901"
+    # $data = $databases = Get-SPContentDatabase | select name
+    $data = [System.Collections.ArrayList]$scriptBlocks
+    # $data = New-Object System.Collections.ArrayList
+    # $data.AddRange(@("param1", "param2", "param3", "param4", "param5", "param6", "param7", "param8", "param9", "param10", "para11"))
+    $jobs = New-Object System.Collections.ArrayList
 
     do {
         Write-Host "Checking job states." -ForegroundColor Yellow
@@ -3227,10 +3227,10 @@ function distribute($servers, $jobs) {
                 $result = Receive-Job $job
                 Write-Host $result
                 Write-Host $result[0]
-                if ($result[0] -ne "ScriptRan") {
+               <# if ($result[0] -ne "ScriptRan") {
                     Write-Host "  Adding data back to que >> $($job.InData)" -ForegroundColor Green
                     $data.Add($job.InData) | Out-Null
-                }
+                }#>
 
                 $toremove += $job
             }
@@ -3246,25 +3246,30 @@ function distribute($servers, $jobs) {
         Write-Host "$($jobs.Count) -lt $($servers.Count) -and $($data.Count)"
         if ($jobs.Count -lt $servers.Count -and $data.Count -gt 0) {
             Write-Host "Checking servers if they can start a new job." -ForegroundColor Yellow
-            foreach ($server in $servers) {
-                Enable-WSManCredSSP -Role Client -Force -DelegateComputer $server | Out-Null
-                $session = Get-PSSession | Where-Object { $_.ComputerName -eq $server }
+            foreach ($server in $servers) {  
+                write-host "server: $server "             
+                $session = GetRemotePSSession $server  (GetFarmAccountCredentials) 
+                write-host "session: "
+                $session
                 if (!$session) {  
-                    $session = New-PSSession -Authentication Credssp -Credential (GetFarmAccountCredentials) -ComputerName $server -ErrorAction SilentlyContinue
-                }
+                   write-host "no session"   
+                 }
 
                 $job = $jobs | ? Location -eq $server
                 if ($job -eq $null) {
                     Write-Host "  Adding job for $server >> $($data[0].Name)" -ForegroundColor Green
                     # No active job was found for the server, so add new job
-                    $job = Invoke-Command -ScriptBlock {
+                   # $job = Invoke-Command -ScriptBlock $data[0] -Session $session -AsJob 
+                    $job = InvokeCommand -server $server -ScriptBlock $data[0] -isJob $true
+                    <#{
                         param($data, $hostname)
                         if ((Get-PSSnapin | Where-Object { $_.Name -eq "Microsoft.SharePoint.PowerShell" }) -eq $null) { 
                             Add-PSSnapIn "Microsoft.SharePoint.Powershell" 
                         }
                         $results = Upgrade-SPContentDatabase $data -Confirm:$false -WarningVariable warn -ErrorVariable erro                 
                         @("ScriptRan", $warn, $erro)                   
-                    } -Session $session -ArgumentList ($data[0].Name), $env:computername -AsJob 
+                    } #>
+                    
                     $job | Add-Member -MemberType NoteProperty -Name InData -Value $data[0]
                     $jobs.Add($job) | Out-Null
                     $data.Remove($data[0])
