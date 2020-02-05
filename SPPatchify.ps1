@@ -633,6 +633,7 @@ function LoopRemoteCmd($msg, $cmd, $isJob = $false) {
 
         # Remote Posh
         Write-Host ">> invoke on $addr $(Get-Date)" -Fore "Green"
+        Write-Host "mergeSb $mergeSb" -Fore "blue"
         Start-Sleep 1
         InvokeCommand -ScriptBlock $mergeSb -server $addr -isJob $isJob    
         Write-Host "<< complete on $addr $(Get-Date)" -Fore "Green"
@@ -649,15 +650,23 @@ function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
     ## invoke command
 
     # Script block
+    # write-host "sb: $ScriptBlock"
+    # write-host "sb.GetType().Name: $($ScriptBlock.GetType().Name)"
+
+    if([string]::IsNullOrEmpty($ScriptBlock)){
+        write-host "Scriptblock is empty"
+        return
+    }
     if ($ScriptBlock.GetType().Name -eq "String") {
         $ScriptBlock = [ScriptBlock]::Create($ScriptBlock)
     }
-    
+    #write-host "sb.GetType().Name: $($ScriptBlock.GetType().Name)"
+    # write-host "ScriptBlock: $ScriptBlock"
 
     if ($env:computername -eq $server) {
-        Write-Host $ScriptBlock
+
         if ($isJob) {
-            Invoke-Command  -ScriptBlock $ScriptBlock -AsJob
+            Start-Job -ScriptBlock $ScriptBlock
         }
         else {
             Invoke-Command  -ScriptBlock $ScriptBlock
@@ -873,7 +882,7 @@ function DistributedJobs2($scriptBlocks, [string[]]$servers, [int]$maxJobs = 1, 
         }
 
         Write-Host "Starting job for $avaialableServer"
-        InvokeCommand -server $avaialableServer -command $scriptBlock -isJob $true                
+        InvokeCommand -server $avaialableServer -ScriptBlock $scriptBlock -isJob $true                
         
         # Progress
         $prct = [Math]::Round(($counter / $scriptBlocks.Count) * 100)
@@ -932,11 +941,12 @@ function ChangeContent($state) {
             Write-Host "Content DB - create script blocks" -Fore Yellow      
             foreach ($db in $dbs) {  
                 $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($db.WebApp)
-                if ($wa) {          
-                    $sb += { 
+                if ($wa) {   
+                                            
+                    $sb2 = "
                         Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null                    
-                        Mount-SPContentDatabase -WebApplication $wa -Name $name -DatabaseServer $db.NormalizedDataSource | Out-Null 
-                    }                
+                        Mount-SPContentDatabase -WebApplication $($wa.url) -Name $($db.name) -DatabaseServer $($db.NormalizedDataSource) | Out-Null"
+                        $sb += $sb2           
                 }
             }
             $serverAddress = getFarmServers | ForEach-Object { $_.Address }
@@ -1733,7 +1743,7 @@ function TestRemotePS() {
 
     # Display
     Get-PSSession | Format-Table -AutoSize
-    if (getRemoteServers.Count -eq (Get-PSSession).Count) {
+    if ((getRemoteServers).Count -eq (Get-PSSession).Count) {
         $color = "Green"
     }
     else {
@@ -1860,6 +1870,15 @@ function Main() {
     if ($EnablePSRemoting) {  
         # Enable CredSSP remoting      
         EnablePSRemoting
+        Exit
+    }
+
+    # Enable CredSSP remoting      
+    EnablePSRemoting
+
+    # Verify Remote PowerShell
+    if (-not (VerifyRemotePS)) {
+        return
     }
     
     # Save Service Instance
@@ -1941,13 +1960,7 @@ function Main() {
 
     #$global:cred = (GetFarmAccountCredentials)
 
-    # Enable CredSSP remoting      
-    EnablePSRemoting
-
-    # Verify Remote PowerShell
-    if (-not (VerifyRemotePS)) {
-        return
-    }
+    
 
     # WMI Uptime
     # VerifyWMIUptime
@@ -2171,7 +2184,7 @@ function Main() {
         foreach ($server in getFarmServers) {
             $addr = $server.Address            
             Write-Host "Reboot $($addr)" -Fore Yellow
-            Restart-Computer -ComputerName $addr            
+            Restart-Computer -ComputerName $addr -force          
         }
     }
 }
@@ -3225,8 +3238,7 @@ function AutoSPSourceBuilder() {
             Write-Verbose $job.State
             if ($job.State -ne "Running") {
                 $result = Receive-Job $job
-                Write-Host $result
-                Write-Host $result[0]
+                Write-Host "result $result"
                <# if ($result[0] -ne "ScriptRan") {
                     Write-Host "  Adding data back to que >> $($job.InData)" -ForegroundColor Green
                     $data.Add($job.InData) | Out-Null
@@ -3247,17 +3259,11 @@ function AutoSPSourceBuilder() {
         if ($jobs.Count -lt $servers.Count -and $data.Count -gt 0) {
             Write-Host "Checking servers if they can start a new job." -ForegroundColor Yellow
             foreach ($server in $servers) {  
-                write-host "server: $server "             
-                $session = GetRemotePSSession $server  (GetFarmAccountCredentials) 
-                write-host "session: "
-                $session
-                if (!$session) {  
-                   write-host "no session"   
-                 }
-
+                write-host "server: $server "    
                 $job = $jobs | ? Location -eq $server
                 if ($job -eq $null) {
                     Write-Host "  Adding job for $server >> $($data[0].Name)" -ForegroundColor Green
+                    write-host $data[0]
                     # No active job was found for the server, so add new job
                    # $job = Invoke-Command -ScriptBlock $data[0] -Session $session -AsJob 
                     $job = InvokeCommand -server $server -ScriptBlock $data[0] -isJob $true

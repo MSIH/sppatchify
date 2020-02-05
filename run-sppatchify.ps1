@@ -6,10 +6,10 @@ cd D:\Artifacts\Software\sppatchify
 .\sppatchify.ps1 -showVersionExit
 .\sppatchify.ps1 -testRemotePSExit
 .\sppatchify.ps1 -productlocalExit
-.\sppatchify.ps1 -saveServiceInstanceExit
+.\sppatchify.ps1 -EnablePSRemoting
 .\sppatchify.ps1 -reportContentDatabasesExit
 .\sppatchify.ps1 -ClearCacheIni
-.\sppatchify.ps1 -Standard
+.\sppatchify.ps1 -RunConfigWizard
 .\sppatchify.ps1 -RunAndInstallCU
 <#
  -- AutoSPSourceBuilder SharePoint Update Download/Integration Utility --
