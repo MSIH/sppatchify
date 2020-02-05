@@ -139,7 +139,7 @@ function CopyMedia($action = "Copy") {
             # Dynamic command
             $dest = "\\$addr\$remoteRoot\media"
             mkdir $dest -Force -ErrorAction SilentlyContinue | Out-Null;
-            ROBOCOPY ""$root\media"" ""$dest"" /Z /S /W:0 /R:0
+            ROBOCOPY ""$root\media"" ""$dest"" /Z /MIR /W:0 /R:0
         }
     }
 
@@ -1364,7 +1364,10 @@ function PatchMenu() {
     }
     else {
         $spYear = $null
-        $spYear = (Get-SPFarm).BuildVersion
+        if (Test-Path "C:\Program Files\Common Files\Shared Tools\Web Server Extensions") {
+             $spYear = (Get-SPFarm).BuildVersion
+        }
+       
         $spAvailableVersionNumbers = @{
             19 = "2019"
             16 = "2016"
@@ -1395,8 +1398,8 @@ function PatchMenu() {
     
     Write-Host " - SharePoint $sharePointVersion selected."
     $Destination = AutoSPSourceBuilder -UpdateLocation "$root\media" -SharePointVersion $sharePointVersion
-    $Destination 
-    Get-ChildItem -Path $Destination -Recurse -File $Destination | Copy-Item -Destination $root\media 
+    #$Destination 
+    #Get-ChildItem -Path $Destination -Recurse -File $Destination | Copy-Item -Destination $root\media 
     #Get-ChildItem -Path $root\media -Recurse -Directory | Remove-Item 
     <#
 
@@ -1821,14 +1824,7 @@ function Main() {
     }
     #>
 
-    # Halt if no servers detected
-    if ((getFarmServers).Count -eq 0) {
-        Write-Host "HALT - POWERSHELL ERROR - No SharePoint servers detected.  Close this window and run from new window." -Fore Red
-        Exit        
-    }
-    else {
-        Write-Host "Servers Online: $((getFarmServers).Count)"   
-    }   
+    
     
 
     # Start LOG
@@ -1837,12 +1833,24 @@ function Main() {
     $logFile = "$logFolder\SPPatchify-$when.txt"
     mkdir "$logFolder" -ErrorAction SilentlyContinue | Out-Null
     mkdir "$logFolder\msp" -ErrorAction SilentlyContinue | Out-Null
-    Start-Transcript $logFile
+    Start-Transcript $logFile    
 
-    # Enable CredSSP remoting      
-    EnablePSRemoting
+    # Download media
+    if ($downloadMedia) {
+        PatchRemoval
+        PatchMenu 
+        Exit       
+    }
 
-    
+    # Halt if no servers detected
+    if ((getFarmServers).Count -eq 0) {
+        Write-Host "HALT - POWERSHELL ERROR - No SharePoint servers detected.  Close this window and run from new window." -Fore Red
+        Exit        
+    }
+    else {
+        Write-Host "Servers Online: $((getFarmServers).Count)"   
+    }   
+
     if ($EnablePSRemoting) {  
         # Enable CredSSP remoting      
         EnablePSRemoting
@@ -1867,12 +1875,7 @@ function Main() {
         TestRemotePS
         Exit
     }
-
-    # Download media
-    if ($downloadMedia) {
-        PatchRemoval
-        PatchMenu        
-    }
+    
 	
     # Display version
     if ($showVersionExit) {
@@ -1931,6 +1934,9 @@ function Main() {
     #ReadIISPW
 
     #$global:cred = (GetFarmAccountCredentials)
+
+    # Enable CredSSP remoting      
+    EnablePSRemoting
 
     # Verify Remote PowerShell
     if (-not (VerifyRemotePS)) {
