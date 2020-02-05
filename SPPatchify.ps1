@@ -3191,6 +3191,86 @@ function AutoSPSourceBuilder() {
     Return "$UpdateLocation\$spServicePackSubfolder"
 }
 
+function distribute($servers, $jobs) {
+    $servers = "WBSSP201902", "WBSSP201901"
+    $data = $databases = Get-SPContentDatabase | select name
+    $data = [System.Collections.ArrayList]$data 
+    #$data = New-Object System.Collections.ArrayList
+    #$data.AddRange(@("param1", "param2", "param3", "param4", "param5", "param6", "param7", "param8", "param9", "param10", "para11"))
+    $jobs = New-Object System.Collections.ArrayList
 
+    function GetFarmAccountCredentials() {
+        $farmAccount = (Get-SPFarm).DefaultServiceAccount.Name
+        import-Module WebAdministration
+        $farmAccountPassword = (Get-ChildItem IIS:\AppPools | Where-Object { $_.processModel.userName -eq $farmAccount })[0].processModel.password
+
+        if ($farmAccount -and $farmAccountPassword ) {
+            $securePassword = $farmAccountPassword | ConvertTo-SecureString -AsPlainText -Force
+            $PSCredential = New-Object System.Management.Automation.PSCredential -ArgumentList $farmAccount, $securePassword
+        }    
+    
+        return $PSCredential      
+    }
+
+    do {
+        Write-Host "Checking job states." -ForegroundColor Yellow
+        $toremove = @()
+        foreach ($job in $jobs) {
+            Write-Verbose $job.State
+            if ($job.State -ne "Running") {
+                $result = Receive-Job $job
+                Write-Host $result
+                Write-Host $result[0]
+                if ($result[0] -ne "ScriptRan") {
+                    Write-Host "  Adding data back to que >> $($job.InData)" -ForegroundColor Green
+                    $data.Add($job.InData) | Out-Null
+                }
+
+                $toremove += $job
+            }
+        }
+
+        Write-Host "Removing completed/failed jobs" -ForegroundColor Yellow
+        foreach ($job in $toremove) {
+            Write-Host "  Removing job >> $($job.Location)" -ForegroundColor Green
+            $jobs.Remove($job) | Out-Null
+        }
+
+        # Check if there is room to start another job
+        Write-Host "$($jobs.Count) -lt $($servers.Count) -and $($data.Count)"
+        if ($jobs.Count -lt $servers.Count -and $data.Count -gt 0) {
+            Write-Host "Checking servers if they can start a new job." -ForegroundColor Yellow
+            foreach ($server in $servers) {
+                Enable-WSManCredSSP -Role Client -Force -DelegateComputer $server | Out-Null
+                $session = Get-PSSession | Where-Object { $_.ComputerName -eq $server }
+                if (!$session) {  
+                    $session = New-PSSession -Authentication Credssp -Credential (GetFarmAccountCredentials) -ComputerName $server -ErrorAction SilentlyContinue
+                }
+
+                $job = $jobs | ? Location -eq $server
+                if ($job -eq $null) {
+                    Write-Host "  Adding job for $server >> $($data[0].Name)" -ForegroundColor Green
+                    # No active job was found for the server, so add new job
+                    $job = Invoke-Command -ScriptBlock {
+                        param($data, $hostname)
+                        if ((Get-PSSnapin | Where-Object { $_.Name -eq "Microsoft.SharePoint.PowerShell" }) -eq $null) { 
+                            Add-PSSnapIn "Microsoft.SharePoint.Powershell" 
+                        }
+                        $results = Upgrade-SPContentDatabase $data -Confirm:$false -WarningVariable warn -ErrorVariable erro                 
+                        @("ScriptRan", $warn, $erro)                   
+                    } -Session $session -ArgumentList ($data[0].Name), $env:computername -AsJob 
+                    $job | Add-Member -MemberType NoteProperty -Name InData -Value $data[0]
+                    $jobs.Add($job) | Out-Null
+                    $data.Remove($data[0])
+                }
+            }
+        }
+        # Just a manual check of $jobs
+        Write-Output $jobs
+        # Wait a bit before checking again
+        Start-Sleep -Seconds 10
+    } while ($data.Count -gt 0)
+
+}
 
 Main
