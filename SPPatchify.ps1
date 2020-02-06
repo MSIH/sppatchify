@@ -942,10 +942,16 @@ function ChangeContent($state) {
             foreach ($db in $dbs) {  
                 $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($db.WebApp)
                 if ($wa) {   
-                                            
-                    $sb2 = "
-                        Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null                    
-                        Mount-SPContentDatabase -WebApplication $($wa.url) -Name $($db.name) -DatabaseServer $($db.NormalizedDataSource) | Out-Null"
+                                           
+                    $sb2 = '
+                        Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null   
+
+                        $db = Get-SPContentDatabase | Where-Object {$_.Name -eq "'+$($db.name)+'"}  
+
+                        If(-not $db) {Mount-SPContentDatabase -AssignNewDatabaseId -WebApplication "' + $($wa.url) + '" -Name "' + $($db.name) + '" -DatabaseServer ' + $($db.NormalizedDataSource) + ' | Out-Null}
+                        $NeedsUpgrade = (Get-SPContentDatabase | Where-Object {$_.Name -eq "' + $($db.name) + '"}).NeedsUpgrade
+                        if($NeedsUpgrade){Upgrade-SPContentDatabase -Name "' + $($db.name) + '" -WebApplication "' + $($wa.url) + '" -ErrorAction SilentlyContinue -Confirm:$false | Out-Null}
+                        '
                         $sb += $sb2           
                 }
             }
@@ -3222,7 +3228,7 @@ function AutoSPSourceBuilder() {
         if (!$servers -or !$scriptBlocks) {
             return
         }   
-        Get-Job | Remove-Job 
+        Get-Job | Stop-job | Remove-Job 
         Get-PSSession | Remove-PSSession
     # $servers = "WBSSP201902", "WBSSP201901"
     # $data = $databases = Get-SPContentDatabase | select name
