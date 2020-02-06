@@ -22,7 +22,7 @@ param (
     [Alias("d")]
     [switch]$downloadMedia,
     [string]$downloadVersion,
-    
+
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -StartSharePointSearch.')] 
     [switch]$StartSharePointSearch,
     
@@ -2509,6 +2509,10 @@ function AutoSPSourceBuilder() {
         $spYear = $SharePointVersion
     }
 
+    # is is a hack to remove error from download media
+     if ($UpdateLocation){
+        $Destination  = $UpdateLocation
+    }
     $Destination = $Destination.TrimEnd("\")
     # Ensure the Destination has the year at the end of the path, in case we forgot to type it in when/if prompted
     if (!($Destination -like "*$spYear")) {
@@ -2518,6 +2522,7 @@ function AutoSPSourceBuilder() {
     if ([string]::IsNullOrEmpty($UpdateLocation)) {
         $UpdateLocation = $Destination + "\Updates"
     }
+
     Write-Verbose -Message "Update location is `"$UpdateLocation`""
 
     if ($SourceLocation) {
@@ -3156,7 +3161,7 @@ function AutoSPSourceBuilder() {
     }
 
     #endregion
-
+$Destination = 
     #region Wrap Up
     WriteLine
     if (!([string]::IsNullOrEmpty($SourceLocation))) {
