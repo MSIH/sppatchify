@@ -11,7 +11,7 @@ cd D:\Artifacts\Software\sppatchify
 .\sppatchify.ps1 -ClearCacheIni
 .\sppatchify.ps1 -RunConfigWizard
 .\sppatchify.ps1 -RunAndInstallCU
-.\sppatchify.ps1 -Advanced
+.\sppatchify.ps1 -Advanced #dismount and mount
 .\sppatchify.ps1 -PauseSharePointSearch
 <#
  -- AutoSPSourceBuilder SharePoint Update Download/Integration Utility --
