@@ -18,17 +18,18 @@
 
 [CmdletBinding()]
 param (
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -d -downloadMedia to execute Media Download only.  No farm changes.  Prep step for real patching later.')]
-    [Alias("d")]
-    [switch]$downloadMedia,
-    [string]$downloadVersion,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -StartSharePointSearch.')] 
+    [switch]$StartSharePointSearch,
+    
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -PauseSharePointSearch.')] 
+    [switch]$PauseSharePointSearch,  
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -c -CopyMedia to copy \media\ across all peer machines.  No farm changes.  Prep step for real patching later.')]
-    [Alias("c")]
+
     [switch]$CopyMedia,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -v -showVersionExit to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
-    [Alias("v")]
+
     [switch]$showVersionExit, 
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -phaseTwo to execute Phase Two after local reboot.')]
@@ -1921,6 +1922,21 @@ function Main() {
         Exit
     }
 
+#  search
+    if ($PauseSharePointSearch) {
+        PauseSharePointSearch
+        # display file
+        Exit
+    }
+
+        if ($StartSharePointSearch) {
+        StartSharePointSearch
+        # display file
+        Exit
+    }
+
+
+
     <# Change Services
     if ($changeServices.ToUpper() -eq "TRUE") {
         changeServices $true
@@ -2024,7 +2040,6 @@ function Main() {
         # CopyMedia "Copy"    
         # PauseSharePointSearch
         RunAndInstallCU
-        WaitReboot
         VerifyCUInstalledOnAllServers         
         RunConfigWizard 
         StartSharePointSearch
@@ -2057,31 +2072,24 @@ function Main() {
     } 
 
     if ($Standard) {        
-        PatchMenu    
-        CopyMedia "Copy"
         PauseSharePointSearch
         RunAndInstallCU
         WaitReboot
-        VerifyCUInstalledOnAllServers         
-        RunConfigWizard 
+        VerifyCUInstalledOnAllServers  
+        RunConfigWizard
         StartSharePointSearch
         DisplayCA
     }
 
     if ($Advanced) {
         # dismount databases before running psconfig
-        # mount databases distributed           
-        PatchRemoval
-        PatchMenu    
-        CopyMedia "Copy"
+        # mount databases distributed  
         PauseSharePointSearch
         RunAndInstallCU
-        WaitReboot
         VerifyCUInstalledOnAllServers 
         DismountContentDatabase #Advanced
         RunConfigWizard
         MountContentDatabase #Advanced
-        UpgradeContent
         StartSharePointSearch
         DisplayCA
     }
