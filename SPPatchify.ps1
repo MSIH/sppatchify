@@ -18,6 +18,11 @@
 
 [CmdletBinding()]
 param (
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -d -downloadMedia to execute Media Download only.  No farm changes.  Prep step for real patching later.')]
+    [Alias("d")]
+    [switch]$downloadMedia,
+    [string]$downloadVersion,
+    
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -StartSharePointSearch.')] 
     [switch]$StartSharePointSearch,
     
@@ -25,7 +30,6 @@ param (
     [switch]$PauseSharePointSearch,  
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -c -CopyMedia to copy \media\ across all peer machines.  No farm changes.  Prep step for real patching later.')]
-
     [switch]$CopyMedia,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -v -showVersionExit to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
