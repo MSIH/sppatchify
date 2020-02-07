@@ -185,7 +185,7 @@ function VerifyCUInstalledOnAllServers() {
     if ($halt) {
         $halt | Format-Table -AutoSize
         Write-Host "HALT - MEDIA ERROR - Install on servers" -Fore Red
-        Exit
+        Stop-Transcript; Exit
     }
 }
 
@@ -208,7 +208,7 @@ function SafetyEXE() {
 
         # Halt
         if ($halt) {
-            Exit
+            Stop-Transcript; Exit
         }
     }
 }
@@ -1866,13 +1866,13 @@ function Main() {
     if ($downloadMedia) {
         PatchRemoval
         PatchMenu 
-        Exit       
+        Stop-Transcript; Exit       
     }
 
     # Halt if no servers detected
     if ((getFarmServers).Count -eq 0) {
         Write-Host "HALT - POWERSHELL ERROR - No SharePoint servers detected.  Close this window and run from new window." -Fore Red
-        Exit        
+        Stop-Transcript; Exit        
     }
     else {
         Write-Host "Servers Online: $((getFarmServers).Count)"   
@@ -1881,7 +1881,7 @@ function Main() {
     if ($EnablePSRemoting) {  
         # Enable CredSSP remoting      
         EnablePSRemoting
-        Exit
+        Stop-Transcript; Exit
     }
 
     # Enable CredSSP remoting      
@@ -1896,47 +1896,47 @@ function Main() {
     if ($saveServiceInstanceExit) {
         SaveServiceInst
         # display file
-        Exit
+        Stop-Transcript; Exit
     }
 
     # Run SPPL to detect new binary patches
     if ($productlocalExit) {
         TestRemotePS
         ProductLocal
-        Exit
+        Stop-Transcript; Exit
     }
         
     # Test PowerShell
     if ($testRemotePSExit) {
         TestRemotePS
-        Exit
+        Stop-Transcript; Exit
     }
     
 	
     # Display version
     if ($showVersionExit) {
         ShowVersion
-        Exit
+        Stop-Transcript; Exit
     }
  
     # Mount Databases
     if ($reportContentDatabasesExit) {
         ReportContentDatabases
         # display file
-        Exit
+        Stop-Transcript; Exit
     }
 
 #  search
     if ($PauseSharePointSearch) {
         PauseSharePointSearch
         # display file
-        Exit
+        Stop-Transcript; Exit
     }
 
         if ($StartSharePointSearch) {
         StartSharePointSearch
         # display file
-        Exit
+        Stop-Transcript; Exit
     }
 
 
@@ -1955,21 +1955,21 @@ function Main() {
     # Change Services
     if ($startSharePointRelatedServicesExit) {
         changeServices $true
-        Exit
+        Stop-Transcript; Exit
     }
     if ($stopSharePointRelatedServicesExit) {
         changeServices $false
-        Exit
+        Stop-Transcript; Exit
     }
 
     # Install App_Offline
     if ($appOffline.ToUpper() -eq "TRUE") {
         AppOffline $true
-        Exit
+        Stop-Transcript; Exit
     }
     if ($appOffline.ToUpper() -eq "FALSE") {
         AppOffline $false
-        Exit
+        Stop-Transcript; Exit
     }	
 
     function StartSharePointRelatedServices() {
@@ -2547,7 +2547,7 @@ function AutoSPSourceBuilder() {
             $global:errorWarning = $true
             break
             Pause "exit"
-            exit
+            Stop-Transcript; Exit
         }
         else {
             Write-Host " - Source found in $sourceDir."
@@ -2564,7 +2564,7 @@ function AutoSPSourceBuilder() {
                 $global:errorWarning = $true
                 break
                 Pause "exit"
-                exit
+                Stop-Transcript; Exit
             }
             Write-Host " - SharePoint $spYear detected."
             if ($spYear -eq "2013") {
@@ -2637,7 +2637,7 @@ function AutoSPSourceBuilder() {
                 Remove-Variable -Name selectedCumulativeUpdate -Force -ErrorAction SilentlyContinue
             }
             if ([string]::IsNullOrEmpty($selectedCumulativeUpdate)) {
-                exit
+                Stop-Transcript; Exit
             }
         }
         $CumulativeUpdate = $selectedCumulativeUpdate
@@ -2977,7 +2977,7 @@ function AutoSPSourceBuilder() {
             $global:errorWarning = $true
             break
             Pause "exit"
-            exit
+            Stop-Transcript; Exit
         }
         else {
             Write-Host " - Source found in $sourceDirWAC."
@@ -3290,6 +3290,7 @@ $Destination =
                     # No active job was found for the server, so add new job
                    # $job = Invoke-Command -ScriptBlock $data[0] -Session $session -AsJob 
                     $job = InvokeCommand -server $server -ScriptBlock $data[0] -isJob $true
+                    start-Sleep 3
                     <#{
                         param($data, $hostname)
                         if ((Get-PSSnapin | Where-Object { $_.Name -eq "Microsoft.SharePoint.PowerShell" }) -eq $null) { 
