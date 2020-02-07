@@ -23,6 +23,9 @@ param (
     [switch]$downloadMedia,
     [string]$downloadVersion,
 
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -rebootFarm.')] 
+    [switch]$rebootFarm,    
+
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -StartSharePointSearch.')] 
     [switch]$StartSharePointSearch,
     
@@ -671,10 +674,10 @@ function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
     if ($env:computername -eq $server) {
 
         if ($isJob) {
-            Start-Job -ScriptBlock $ScriptBlock
+            Start-Job -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
         }
         else {
-            Invoke-Command  -ScriptBlock $ScriptBlock
+            Invoke-Command -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
         }
     }
     else {
@@ -1868,6 +1871,12 @@ function Main() {
         PatchMenu 
         Stop-Transcript; Exit       
     }
+    if ($rebootFarm) {
+        rebootFarm
+        Stop-Transcript; Exit       
+    }
+
+    
 
     # Halt if no servers detected
     if ((getFarmServers).Count -eq 0) {
@@ -2200,13 +2209,24 @@ function Main() {
     
         foreach ($server in getRemoteServers) {
             
-            Write-Host "Reboot $($addr)" -Fore Yellow
-            Restart-Computer -ComputerName $addr -Force
+            Write-Host "Reboot $($server)" -Fore Yellow
+            Restart-Computer -ComputerName $server.Name -Force
             Start-Sleep 1
             
         }
         Restart-Computer -Force
     }
+}
+
+function rebootFarm() {
+    foreach ($server in getRemoteServers) {
+            
+        Write-Host "Reboot $($server)" -Fore Yellow
+        Restart-Computer -ComputerName $server.Name -Force
+        Start-Sleep 1
+            
+    }
+    Restart-Computer -Force
 }
 
 function AutoSPSourceBuilder() {
