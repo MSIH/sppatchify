@@ -677,7 +677,9 @@ function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
             Start-Job -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
         }
         else {
-            Invoke-Command -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
+            #Start-Job -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
+            #Invoke-Command -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
+            Start-Process -FilePath Powershell -Credential (GetFarmAccountCredentials) -Wait -ArgumentList '-Command', $ScriptBlock 
         }
     }
     else {
