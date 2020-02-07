@@ -658,7 +658,7 @@ function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
     # write-host "sb: $ScriptBlock"
     # write-host "sb.GetType().Name: $($ScriptBlock.GetType().Name)"
 
-    if([string]::IsNullOrEmpty($ScriptBlock)){
+    if ([string]::IsNullOrEmpty($ScriptBlock)) {
         write-host "Scriptblock is empty"
         return
     }
@@ -920,7 +920,7 @@ function ChangeContent($state) {
     [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SharePoint") | Out-Null
     $c = (Get-SPContentDatabase).Count
     Write-Host "Content Databases Online: $c"
-    $sb =@()
+    $sb = @()
     if (!$state) {
         # Remove content database
         $dbs = Get-SPContentDatabase
@@ -951,13 +951,13 @@ function ChangeContent($state) {
                     $sb2 = '
                         Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null   
 
-                        $db = Get-SPContentDatabase | Where-Object {$_.Name -eq "'+$($db.name)+'"}  
+                        $db = Get-SPContentDatabase | Where-Object {$_.Name -eq "' + $($db.name) + '"}  
 
                         If(-not $db) {Mount-SPContentDatabase -AssignNewDatabaseId -WebApplication "' + $($wa.url) + '" -Name "' + $($db.name) + '" -DatabaseServer ' + $($db.NormalizedDataSource) + ' | Out-Null}
                         $NeedsUpgrade = (Get-SPContentDatabase | Where-Object {$_.Name -eq "' + $($db.name) + '"}).NeedsUpgrade
                         if($NeedsUpgrade){Upgrade-SPContentDatabase -Name "' + $($db.name) + '" -WebApplication "' + $($wa.url) + '" -ErrorAction SilentlyContinue -Confirm:$false | Out-Null}
                         '
-                        $sb += $sb2           
+                    $sb += $sb2           
                 }
             }
             $serverAddress = getFarmServers | ForEach-Object { $_.Address }
@@ -1392,7 +1392,7 @@ function PatchMenu() {
     else {
         $spYear = $null
         if (Test-Path "C:\Program Files\Common Files\Shared Tools\Web Server Extensions") {
-             $spYear = (Get-SPFarm).BuildVersion
+            $spYear = (Get-SPFarm).BuildVersion
         }
        
         $spAvailableVersionNumbers = @{
@@ -1926,14 +1926,14 @@ function Main() {
         Stop-Transcript; Exit
     }
 
-#  search
+    #  search
     if ($PauseSharePointSearch) {
         PauseSharePointSearch
         # display file
         Stop-Transcript; Exit
     }
 
-        if ($StartSharePointSearch) {
+    if ($StartSharePointSearch) {
         StartSharePointSearch
         # display file
         Stop-Transcript; Exit
@@ -2198,12 +2198,14 @@ function Main() {
     if ($Standard -or $RunAndInstallCU) {
         # LocalReboot
     
-        write-host "rebooting servers"
-        foreach ($server in getFarmServers) {
-            $addr = $server.Address            
+        foreach ($server in getRemoteServers) {
+            
             Write-Host "Reboot $($addr)" -Fore Yellow
-            Restart-Computer -ComputerName $addr -force          
+            Restart-Computer -ComputerName $addr -Force
+            Start-Sleep 1
+            
         }
+        Restart-Computer -Force
     }
 }
 
@@ -2480,8 +2482,8 @@ function AutoSPSourceBuilder() {
     # $proxyCredentials = (Get-Credential -Message "Enter credentials for proxy server:" -UserName "$env:USERDOMAIN\$env:USERNAME")
 
     Write-Host -ForegroundColor Green " -- AutoSPSourceBuilder SharePoint Update Download/Integration Utility --"
-<##>
-$UseExistingLocalXML=$true
+    <##>
+    $UseExistingLocalXML = $true
     if ($UseExistingLocalXML) {
         Write-Warning "'UseExistingLocalXML' specified; skipping download of AutoSPSourceBuilder.xml, and attempting to use local copy at '$dp0\AutoSPSourceBuilder.xml'."
         Write-Warning "This could mean you won't have the latest updates in your local copy."
@@ -2511,8 +2513,8 @@ $UseExistingLocalXML=$true
     }
 
     # is is a hack to remove error from download media
-     if ($UpdateLocation){
-        $Destination  = $UpdateLocation
+    if ($UpdateLocation) {
+        $Destination = $UpdateLocation
     }
     $Destination = $Destination.TrimEnd("\")
     # Ensure the Destination has the year at the end of the path, in case we forgot to type it in when/if prompted
@@ -3162,7 +3164,7 @@ $UseExistingLocalXML=$true
     }
 
     #endregion
-$Destination = 
+    $Destination = 
     #region Wrap Up
     WriteLine
     if (!([string]::IsNullOrEmpty($SourceLocation))) {
@@ -3241,13 +3243,13 @@ $Destination =
 }
 
 # function distribute($servers, $jobs) {
-    function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.Automation.PSCredential]$credentials = (GetFarmAccountCredentials)) {
+function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.Automation.PSCredential]$credentials = (GetFarmAccountCredentials)) {
     
-        if (!$servers -or !$scriptBlocks) {
-            return
-        }   
-        Get-Job | Stop-job | Remove-Job 
-        Get-PSSession | Remove-PSSession
+    if (!$servers -or !$scriptBlocks) {
+        return
+    }   
+    Get-Job | Stop-job | Remove-Job 
+    Get-PSSession | Remove-PSSession
     # $servers = "WBSSP201902", "WBSSP201901"
     # $data = $databases = Get-SPContentDatabase | select name
     $data = [System.Collections.ArrayList]$scriptBlocks
@@ -3263,7 +3265,7 @@ $Destination =
             if ($job.State -ne "Running") {
                 $result = Receive-Job $job
                 Write-Host "result $result"
-               <# if ($result[0] -ne "ScriptRan") {
+                <# if ($result[0] -ne "ScriptRan") {
                     Write-Host "  Adding data back to que >> $($job.InData)" -ForegroundColor Green
                     $data.Add($job.InData) | Out-Null
                 }#>
@@ -3289,7 +3291,7 @@ $Destination =
                     Write-Host "  Adding job for $server >> $($data[0].Name)" -ForegroundColor Green
                     write-host $data[0]
                     # No active job was found for the server, so add new job
-                   # $job = Invoke-Command -ScriptBlock $data[0] -Session $session -AsJob 
+                    # $job = Invoke-Command -ScriptBlock $data[0] -Session $session -AsJob 
                     $job = InvokeCommand -server $server -ScriptBlock $data[0] -isJob $true
                     start-Sleep 3
                     <#{
