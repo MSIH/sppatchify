@@ -2480,7 +2480,8 @@ function AutoSPSourceBuilder() {
     # $proxyCredentials = (Get-Credential -Message "Enter credentials for proxy server:" -UserName "$env:USERDOMAIN\$env:USERNAME")
 
     Write-Host -ForegroundColor Green " -- AutoSPSourceBuilder SharePoint Update Download/Integration Utility --"
-
+<##>
+$UseExistingLocalXML=$true
     if ($UseExistingLocalXML) {
         Write-Warning "'UseExistingLocalXML' specified; skipping download of AutoSPSourceBuilder.xml, and attempting to use local copy at '$dp0\AutoSPSourceBuilder.xml'."
         Write-Warning "This could mean you won't have the latest updates in your local copy."
