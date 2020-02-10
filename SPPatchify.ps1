@@ -98,6 +98,7 @@ param (
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -DismountContentDatabase to stop sharepoint and iis services.')]
     [switch]$DismountContentDatabase,
+    [bool] $needsUpdateOnly = $false,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -RunConfigWizard to stop sharepoint and iis services.')]
     [switch]$RunConfigWizard,
@@ -240,7 +241,7 @@ function RunAndInstallCU() {
         if ($bypass) {
             $params += " PACKAGE.BYPASS.DETECTION.CHECK=1"
         }
-        $taskName = "SPPatchify"
+        $taskName = "SPP_InstallCU"
 
         # Loop - Run Task Scheduler
         foreach ($server in getFarmServers) {
@@ -264,7 +265,7 @@ function RunAndInstallCU() {
                 # Create SCHTASK
                 
                 Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
-                Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p 
+                Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -Description "Install SharePoint CU created by SPPatchify Tool" 
 
                 # Event log START
                 New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
@@ -289,7 +290,7 @@ function RunAndInstallCU() {
 
                 # Create SCHTASK
                 Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
-                Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -CimSession $addr
+                Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -CimSession $addr -Description "Install SharePoint CU created by SPPatchify Tool" 
 
                 # Event log START
                 New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
@@ -299,7 +300,7 @@ function RunAndInstallCU() {
             }
         }
 
-        # Watch EXE binary complete
+        WaitEXE# Watch EXE binary complete
         WaitEXE $patchName
     }
 	
@@ -316,6 +317,92 @@ function RunAndInstallCU() {
         }
     }#>
 }
+
+function RunPSconfig() {
+    <#
+   create task
+   run task
+   while until finish
+   #> 
+    Write-Host " RunPSconfig ===== $(Get-Date)" -Fore "Yellow"
+       
+    $taskName = "SPP_RunPSconfig"
+    $cmd = "powershell.exe"
+    $params = "-ExecutionPolicy Bypass -Command &{Add-PsSnapin Microsoft.SharePoint.PowerShell;& PSConfig.exe -cmd upgrade -inplace b2b -wait -cmd applicationcontent -install -cmd installfeatures -cmd secureresources -cmd services -install}"
+    # Loop - Run Task Scheduler
+    foreach ($server in getFarmServers) {
+        # Local PC - No reboot
+        $addr = $server.Address
+        Write-Host $addr 
+        if ($addr -eq $env:computername) {
+            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+            if ($found) {
+                $found | Unregister-ScheduledTask -Confirm:$false 
+            }
+
+            # New SCHTASK parameters
+            $user = GetFarmAccount 
+            $a = New-ScheduledTaskAction -Execute $cmd -Argument $params 
+            $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+            $task = New-ScheduledTask -Action $a -Principal $p -Description "Run PSconfig created by SPPatchify Tool" 
+            # Create SCHTASK                
+            Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
+            $password = (GetFarmAccountPassword)
+            Register-ScheduledTask -InputObject  $task  -User $user -Password $password -TaskName $taskName 
+            #Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -User $user -Password $password
+            start-sleep 3
+            # Event log START                
+            Start-ScheduledTask -TaskName $taskName 
+            Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
+        }    
+        else {
+
+            # Remove SCHTASK if found
+            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
+            if ($found) {
+                $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
+            }
+
+            # New SCHTASK parameters
+            $user = GetFarmAccount                
+            $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -CimSession $addr
+            $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+            $task = New-ScheduledTask -Action $a -Principal $p -Description "Run PSconfig created by SPPatchify Tool"  
+            # Create SCHTASK
+            Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
+            $password = (GetFarmAccountPassword)
+            $taskName
+            $a 
+            $p
+            $addr
+            $User
+            $password
+            $task 
+            Register-ScheduledTask -InputObject $task -TaskName $taskName -CimSession $addr -User $user -Password $password 
+            start-sleep 3
+
+            # Event log START            
+            Start-ScheduledTask -TaskName $taskName -CimSession $addr
+            Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
+        }
+        do {
+  
+            if ($addr -eq $env:computername) {
+                $taskStatus = (Get-ScheduledTask -TaskName $taskName).State -ne 'Ready'
+            }
+            else {
+                $taskStatus = (Get-ScheduledTask -TaskName $taskName -CimSession $addr).State -ne 'Ready'
+            }
+
+            Write-Host "." -NoNewLine
+            Start-Sleep 60
+        }  
+        while ($taskStatus)
+    }   
+    IISStart     
+}
+    
+
 
 function WaitEXE($patchName) {
     Write-Host "===== WaitEXE ===== $(Get-Date)" -Fore "Yellow"
@@ -561,39 +648,44 @@ function LoopRemotePatch($msg, $cmd, $params) {
 
 function GetRemotePSSession([string]$server, [System.Management.Automation.PSCredential]$credentials = [System.Management.Automation.PSCredential]::Empty ) {
     $session = Get-PSSession | Where-Object { $_.ComputerName -eq $server }
-    if (!$session) {        
-        if ($remoteSessionPort -and $remoteSessionSSL) {
-            if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
-                $session = New-PSSession -ComputerName $server -Port $remoteSessionPort -UseSSL
-            }
-            else {
-                $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort -UseSSL 
-            }
+    if (!$session) {   
+        if ($env:computername -eq $server) {
+            $session = New-PSSession -Credential $credentials
+        }
+        else {     
+            if ($remoteSessionPort -and $remoteSessionSSL) {
+                if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
+                    $session = New-PSSession -ComputerName $server -Port $remoteSessionPort -UseSSL
+                }
+                else {
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort -UseSSL 
+                }
 
-        }
-        elseif ($remoteSessionPort) {
-            if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
-                $session = New-PSSession -ComputerName $server -Port $remoteSessionPort 
             }
-            else {
-                $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort 
+            elseif ($remoteSessionPort) {
+                if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
+                    $session = New-PSSession -ComputerName $server -Port $remoteSessionPort 
+                }
+                else {
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort 
+                }
             }
-        }
-        elseif ($remoteSessionSSL) {
+            elseif ($remoteSessionSSL) {
       
-            if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
-                $session = New-PSSession -ComputerName $server  -UseSSL
+                if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
+                    $session = New-PSSession -ComputerName $server  -UseSSL
+                }
+                else {
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -UseSSL 
+                }        
             }
             else {
-                $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -UseSSL 
-            }        
-        }
-        else {
-            if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
-                $session = New-PSSession -ComputerName $server 
-            }
-            else {
-                $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp 
+                if ($credentials -eq [System.Management.Automation.PSCredential]::Empty) {
+                    $session = New-PSSession -ComputerName $server 
+                }
+                else {
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp 
+                }
             }
         }
     }
@@ -641,7 +733,7 @@ function LoopRemoteCmd($msg, $cmd, $isJob = $false) {
 
         # Remote Posh
         Write-Host ">> invoke on $addr $(Get-Date)" -Fore "Green"
-        Write-Host "mergeSb $mergeSb" -Fore "blue"
+        Write-Host "mergeSb $mergeSb" -Fore "Cyan"
         Start-Sleep 1
         InvokeCommand -ScriptBlock $mergeSb -server $addr -isJob $isJob    
         Write-Host "<< complete on $addr $(Get-Date)" -Fore "Green"
@@ -670,7 +762,7 @@ function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
     }
     #write-host "sb.GetType().Name: $($ScriptBlock.GetType().Name)"
     # write-host "ScriptBlock: $ScriptBlock"
-
+    $session = GetRemotePSSession $server (GetFarmAccountCredentials)
     if ($env:computername -eq $server) {
 
         if ($isJob) {
@@ -678,12 +770,12 @@ function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
         }
         else {
             #Start-Job -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
-            #Invoke-Command -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
-            Start-Process -FilePath Powershell -Credential (GetFarmAccountCredentials) -Wait -ArgumentList '-Command', $ScriptBlock 
+            Invoke-Command -Session $Session -ScriptBlock $ScriptBlock 
+            #Start-Process -FilePath Powershell -Credential (GetFarmAccountCredentials) -Wait -ArgumentList '-Command', $ScriptBlock 
         }
     }
     else {
-        $session = GetRemotePSSession $server (GetFarmAccountCredentials)
+        
         if ($session) {
             if ($isJob) {
                 Invoke-Command  -ScriptBlock $ScriptBlock -AsJob -Session $session
@@ -819,6 +911,7 @@ function RunConfigWizard() {
 
     # Save B2B shortcut
     $b2b = {
+        ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
         $file = $psconfig.replace("psconfig.exe", "psconfigb2b.cmd")
         if (!(Test-Path $file)) {
             "psconfig.exe -cmd upgrade -inplace b2b -force" | Out-File $file -Force
@@ -827,18 +920,76 @@ function RunConfigWizard() {
     LoopRemoteCmd "Save B2B shortcut on " @($shared, $b2b)
 
     # Run Config Wizard - https://blogs.technet.microsoft.com/stefan_gossner/2015/08/20/why-i-prefer-psconfigui-exe-over-psconfig-exe/
-    $wiz = {
-        & "$psconfig" -cmd "upgrade" -inplace "b2b" -wait -cmd "applicationcontent" -install -cmd "installfeatures" -cmd "secureresources" -cmd "services" -install
+    $wiz = { ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        Start-Process 'iisreset.exe' -ArgumentList '/stop' -Wait -PassThru -NoNewWindow | Out-Null
+        try {           
+            & "$psconfig" -cmd "upgrade" -inplace "b2b" -wait -cmd "applicationcontent" -install -cmd "installfeatures" -cmd "secureresources" -cmd "services" -install 
+        }
+        catch { "An error occurred." }
     }
     LoopRemoteCmd "Run Config Wizard on " @($shared, $wiz)
 }
-function DismountContentDatabase() {
-    ChangeContent $false
+function DismountContentDatabase($needUpgradeOnly = $False) {
+    #ChangeContent $false
+ 
+    Write-Host "===== ContentDB $state ===== $(Get-Date)" -Fore "Yellow"
+    # Display
+    [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SharePoint") | Out-Null
+    $dbs = Get-SPContentDatabase
+    if ($needUpgradeOnly) {
+        $dbs = $dbs | where ($_.NeedsUpgrade)
+    }
+    $c = $dbs.Count
+    Write-Host "Content Databases Online: $c"
+    $sb = @()  
+    # Remove content database
+       
+    if ($dbs) {
+        $dbs | ForEach-Object { $wa = $_.WebApplication.Url; $_ | Select-Object Name, NormalizedDataSource, @{n = "WebApp"; e = { $wa } } } | Export-Csv "$logFolder\contentdbs-$when.csv" -NoTypeInformation
+        $dbs | ForEach-Object {
+            "$($_.Name),$($_.NormalizedDataSource)"
+            Dismount-SPContentDatabase $_ -Confirm:$false
+        }
+    }
+   
 }
 
 function MountContentDatabase() {
-    ChangeContent $true
+    # ChangeContent $true
+    # create script block based on saved content database
+    $files = Get-ChildItem "$logFolder\contentdbs-*.csv" | Sort-Object LastAccessTime -Desc
+    if ($files -is [Array]) {
+        $files = $files[0]
+    }
+    $sb = @()
+    # Loop databases and create script block
+    if ($files) {
+        Write-Host "Content DB - from CSV $($files.Fullname)" -Fore Yellow
+        $dbs = Import-Csv $files.Fullname  
+        Write-Host "Content DB - create script blocks" -Fore Yellow      
+        foreach ($db in $dbs) {  
+            $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($db.WebApp)
+            if ($wa) {   
+                                           
+                $sb2 = '
+                        Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null   
+                        $db = Get-SPContentDatabase | Where-Object {$_.Name -eq "' + $($db.name) + '"}  
+                        If(-not $db) {Mount-SPContentDatabase -AssignNewDatabaseId -WebApplication "' + $($wa.url) + '" -Name "' + $($db.name) + '" -DatabaseServer "' + $($db.NormalizedDataSource) + '" | Out-Null}
+                        $NeedsUpgrade = (Get-SPContentDatabase | Where-Object {$_.Name -eq "' + $($db.name) + '"}).NeedsUpgrade
+                        if($NeedsUpgrade){Upgrade-SPContentDatabase -Name "' + $($db.name) + '" -WebApplication "' + $($wa.url) + '" -ErrorAction SilentlyContinue -Confirm:$false | Out-Null}
+                '
+                $sb += $sb2           
+            }
+        }
+        $serverAddress = getFarmServers | ForEach-Object { $_.Address }
+        DistributedJobs -scriptBlocks $sb -servers $serverAddress -credentials (GetFarmAccountCredentials)
+            
+    }
+    else {
+        Write-Host "Content DB - CSV not found" -Fore Yellow
+    }
 }
+
 
 function ReportContentDatabases() {
     $dbs = Get-SPContentDatabase
@@ -1089,6 +1240,7 @@ function ReadIISPW {
 function DisplayCA() {
     # Version DLL File
     $sb = {
+        ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
         Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null;
         $ver = (Get-SPFarm).BuildVersion.Major;
         [System.Diagnostics.FileVersionInfo]::GetVersionInfo("C:\Program Files\Common Files\microsoft shared\Web Server Extensions\$ver\ISAPI\Microsoft.SharePoint.dll") | Select-Object FileVersion, @{N = 'PC'; E = { $env:computername } }
@@ -1847,7 +1999,9 @@ function Main() {
 
     # Local farm servers
     # $global:servers = Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
-    $remoteRoot = MakeRemote $root
+    If (!(Test-Path -Path $root -PathType Container)) {
+        $remoteRoot = MakeRemote $root
+    }
 
     # List - Target servers
     <#
@@ -1863,8 +2017,13 @@ function Main() {
     $start = Get-Date
     $when = $start.ToString("yyyy-MM-dd-hh-mm-ss")
     $logFile = "$logFolder\SPPatchify-$when.txt"
-    mkdir "$logFolder" -ErrorAction SilentlyContinue | Out-Null
-    mkdir "$logFolder\msp" -ErrorAction SilentlyContinue | Out-Null
+    If (!(Test-Path -Path $logFolder -PathType Container)) {
+        mkdir "$logFolder" -ErrorAction SilentlyContinue | Out-Null
+    }
+    If (!(Test-Path -Path $logFolder\msp -PathType Container)) {
+        mkdir "$logFolder\msp" -ErrorAction SilentlyContinue | Out-Null
+    }
+
     Start-Transcript $logFile    
 
     # Download media
@@ -2064,14 +2223,15 @@ function Main() {
     if ($DismountContentDatabase) {   
         # Run PSconfigure on all servers
         # does not require remoting     
-        DismountContentDatabase
+        DismountContentDatabase $needsUpdateOnly
     } 
 
 
     if ($RunConfigWizard) {   
         # Run PSconfigure on all servers
         # uses CredSSP remoting    
-        RunConfigWizard
+        #RunConfigWizard
+        RunPSconfig
     } 
 
     if ($MountContentDatabase) {  
@@ -3269,7 +3429,14 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.A
     
     if (!$servers -or !$scriptBlocks) {
         return
-    }   
+    }  
+    if ($servers.count -eq 1) {
+        $servers = $env:computername
+    }
+    else { 
+        $servers = $servers | Where-Object { $_ -ne $env:computername }
+    }
+    $scriptBlocks 
     Get-Job | Stop-job | Remove-Job 
     Get-PSSession | Remove-PSSession
     # $servers = "WBSSP201902", "WBSSP201901"
@@ -3306,7 +3473,7 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.A
         Write-Host "$($jobs.Count) -lt $($servers.Count) -and $($data.Count)"
         if ($jobs.Count -lt $servers.Count -and $data.Count -gt 0) {
             Write-Host "Checking servers if they can start a new job." -ForegroundColor Yellow
-            foreach ($server in $servers) {  
+            foreach ($server in $servers ) {  
                 write-host "server: $server "    
                 $job = $jobs | ? Location -eq $server
                 if ($job -eq $null) {
