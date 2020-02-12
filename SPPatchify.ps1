@@ -300,7 +300,7 @@ function RunAndInstallCU() {
             }
         }
 
-        WaitEXE# Watch EXE binary complete
+        # Watch EXE binary complete
         WaitEXE $patchName
     }
 	
