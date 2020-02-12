@@ -21,6 +21,7 @@ cd D:\Artifacts\Software\sppatchify
 .\sppatchify.ps1 -ClearCacheIni
 .\sppatchify.ps1 -RunConfigWizard
 .\sppatchify.ps1 -Advanced #dismount and mount
+.\sppatchify.ps1 -Standard
 
 #future
 .\sppatchify.ps1 -DismountContentDatabase -UpgradeNeeded #these block psconfig

@@ -371,13 +371,7 @@ function RunPSconfig() {
             # Create SCHTASK
             Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
             $password = (GetFarmAccountPassword)
-            $taskName
-            $a 
-            $p
-            $addr
-            $User
-            $password
-            $task 
+    
             Register-ScheduledTask -InputObject $task -TaskName $taskName -CimSession $addr -User $user -Password $password 
             start-sleep 3
 
@@ -2247,11 +2241,11 @@ function Main() {
     } 
 
     if ($Standard) {        
-        PauseSharePointSearch
+        #PauseSharePointSearch
         RunAndInstallCU
         WaitReboot
         VerifyCUInstalledOnAllServers  
-        RunConfigWizard
+        RunPSconfig
         StartSharePointSearch
         DisplayCA
     }
@@ -2263,7 +2257,7 @@ function Main() {
         RunAndInstallCU
         VerifyCUInstalledOnAllServers 
         DismountContentDatabase #Advanced
-        RunConfigWizard
+        
         MountContentDatabase #Advanced
         StartSharePointSearch
         DisplayCA
@@ -2366,7 +2360,7 @@ function Main() {
     FinalCleanUp
     Write-Host "DONE"
 
-    if ($Standard -or $RunAndInstallCU) {
+    if ($false) {
         # LocalReboot
     
         foreach ($server in getRemoteServers) {
