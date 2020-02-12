@@ -10,6 +10,7 @@ cd D:\Artifacts\Software\sppatchify
 .\sppatchify.ps1 -RunConfigWizard
 .\sppatchify.ps1 -MountContentDatabase #mount and update
 .\sppatchify.ps1 -RebootServer
+.\sppatchify.ps1 -UpgradeContent
 
 .\sppatchify.ps1 -DismountContentDatabase
 .\sppatchify.ps1 -MountContentDatabase

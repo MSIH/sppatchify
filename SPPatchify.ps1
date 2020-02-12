@@ -948,42 +948,55 @@ function DismountContentDatabase($needUpgradeOnly = $False) {
    
 }
 
-function MountContentDatabase() {
+function UpdateContentDatabase () {
+    MountContentDatabase -UpdateOnly $true
+}
+
+function MountContentDatabase($UpdateOnly = $false) {
     # ChangeContent $true
     # create script block based on saved content database
-    $files = Get-ChildItem "$logFolder\contentdbs-*.csv" | Sort-Object LastAccessTime -Desc
-    if ($files -is [Array]) {
-        $files = $files[0]
+    if ($UpdateOnly) {
+        $SPContentDatabase = Get-SPContentDatabase
+        if ($SPContentDatabase) {
+            $dbs = $SPContentDatabase | ForEach-Object { 
+                $wa = $_.WebApplication.Url; $_ | Select-Object Name, NormalizedDataSource, @{n = "WebApp"; e = { $wa } } 
+            } 
+        }
     }
-    $sb = @()
-    # Loop databases and create script block
-    if ($files) {
-        Write-Host "Content DB - from CSV $($files.Fullname)" -Fore Yellow
-        $dbs = Import-Csv $files.Fullname  
-        Write-Host "Content DB - create script blocks" -Fore Yellow      
+    else {
+        $files = Get-ChildItem "$logFolder\contentdbs-*.csv" | Sort-Object LastAccessTime -Desc
+        if ($files -is [Array]) {
+            $files = $files[0]
+        }
+        
+        # Loop databases and create script block
+        if ($files) {
+            Write-Host "Content DB - from CSV $($files.Fullname)" -Fore Yellow
+            $dbs = Import-Csv $files.Fullname  
+        }
+        else {
+            Write-Host "Content DB - CSV not found" -Fore Yellow
+        }
+    }
+    if ($dbs) {
+        Write-Host "Content DB - create script blocks" -Fore Yellow 
+        $sb =@()     
         foreach ($db in $dbs) {  
             $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($db.WebApp)
             if ($wa) {   
                                            
-                $sb2 = '
-                        Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null   
+                $sb2 = 'Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null   
                         $db = Get-SPContentDatabase | Where-Object {$_.Name -eq "' + $($db.name) + '"}  
                         If(-not $db) {Mount-SPContentDatabase -AssignNewDatabaseId -WebApplication "' + $($wa.url) + '" -Name "' + $($db.name) + '" -DatabaseServer "' + $($db.NormalizedDataSource) + '" | Out-Null}
                         $NeedsUpgrade = (Get-SPContentDatabase | Where-Object {$_.Name -eq "' + $($db.name) + '"}).NeedsUpgrade
-                        if($NeedsUpgrade){Upgrade-SPContentDatabase -Name "' + $($db.name) + '" -WebApplication "' + $($wa.url) + '" -ErrorAction SilentlyContinue -Confirm:$false | Out-Null}
-                '
+                        if($NeedsUpgrade){Upgrade-SPContentDatabase -Name "' + $($db.name) + '" -WebApplication "' + $($wa.url) + '" -ErrorAction SilentlyContinue -Confirm:$false | Out-Null}'
                 $sb += $sb2           
             }
         }
         $serverAddress = getFarmServers | ForEach-Object { $_.Address }
         DistributedJobs -scriptBlocks $sb -servers $serverAddress -credentials (GetFarmAccountCredentials)
-            
-    }
-    else {
-        Write-Host "Content DB - CSV not found" -Fore Yellow
-    }
+    }            
 }
-
 
 function ReportContentDatabases() {
     $dbs = Get-SPContentDatabase
@@ -2237,14 +2250,15 @@ function Main() {
     if ($UpgradeContent) {  
         # Run PSconfigure on all servers
         # does not require remoting      
-        UpgradeContent
+        UpdateContentDatabase 
     } 
 
     if ($Standard) {        
         #PauseSharePointSearch
         RunAndInstallCU
         WaitReboot
-        VerifyCUInstalledOnAllServers  
+        VerifyCUInstalledOnAllServers 
+        UpdateContentDatabase 
         RunPSconfig
         StartSharePointSearch
         DisplayCA
@@ -2256,8 +2270,7 @@ function Main() {
         PauseSharePointSearch
         RunAndInstallCU
         VerifyCUInstalledOnAllServers 
-        DismountContentDatabase #Advanced
-        
+        DismountContentDatabase #Advanced        
         MountContentDatabase #Advanced
         StartSharePointSearch
         DisplayCA
