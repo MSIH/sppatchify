@@ -1,7 +1,10 @@
+cd D:\DEPL\Software\sppatchify
+cd C:\DEPL\Software\sppatchify
 cd D:\Artifacts\Software\sppatchify
 .\sppatchify.ps1 -downloadMedia -downloadVersion 2019
 .\sppatchify.ps1 -downloadMedia -downloadVersion 2016
 .\sppatchify.ps1 -downloadMedia -downloadVersion 2013
+.\sppatchify.ps1 -Standard #install CU, run psconfig, open CA
 
 .\sppatchify.ps1 -CopyMedia
 .\sppatchify.ps1 -PauseSharePointSearch
@@ -9,8 +12,8 @@ cd D:\Artifacts\Software\sppatchify
 .\sppatchify.ps1 -DismountContentDatabase
 .\sppatchify.ps1 -RunConfigWizard
 .\sppatchify.ps1 -MountContentDatabase #mount and update
+.\sppatchify.ps1 -StartSharePointSearch
 .\sppatchify.ps1 -RebootServer
-.\sppatchify.ps1 -UpgradeContent
 
 .\sppatchify.ps1 -DismountContentDatabase
 .\sppatchify.ps1 -MountContentDatabase
@@ -22,7 +25,6 @@ cd D:\Artifacts\Software\sppatchify
 .\sppatchify.ps1 -ClearCacheIni
 .\sppatchify.ps1 -RunConfigWizard
 .\sppatchify.ps1 -Advanced #dismount and mount
-.\sppatchify.ps1 -Standard
 
 #future
 .\sppatchify.ps1 -DismountContentDatabase -UpgradeNeeded #these block psconfig
@@ -42,5 +44,6 @@ $dbs = Import-Csv $files.Fullname
                         }
                         #>
 
+Get-SPContentDatabase | select NormalizedDataSource, name, needsupgrade | ft -AutoSize
 
 

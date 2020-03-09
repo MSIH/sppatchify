@@ -217,7 +217,7 @@ function SafetyEXE() {
     }
 }
 
-function RunAndInstallCU() {
+function RunAndInstallCU($mainArgs) {
     Write-Host "===== RunAndInstallCU ===== $(Get-Date)" -Fore "Yellow"
 
     # Remove MSPLOG
@@ -300,22 +300,25 @@ function RunAndInstallCU() {
             }
         }
 
-        # Watch EXE binary complete
+        # WaitEXE Watch EXE binary complete
         WaitEXE $patchName
     }
 	
     # SharePoint 2016 Force Reboot
-    <#if ($ver -eq 16) {
+    $ver = (Get-SPFarm).BuildVersion.Major
+    if ($ver -eq 16) {
         Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
 
-        foreach ($server in getFarmServers) {
+        foreach ($server in getRemoteServers) {
             $addr = $server.Address
             if ($addr -ne $env:computername) {
                 Write-Host "Reboot $($addr)" -Fore Yellow
-                Restart-Computer -ComputerName $addr
+                Restart-Computer -ComputerName $addr -Force
             }
-        }
-    }#>
+        }        
+        LocalReboot RunConfigWizard
+        
+    }
 }
 
 function RunPSconfig() {
@@ -371,7 +374,7 @@ function RunPSconfig() {
             # Create SCHTASK
             Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
             $password = (GetFarmAccountPassword)
-    
+      
             Register-ScheduledTask -InputObject $task -TaskName $taskName -CimSession $addr -User $user -Password $password 
             start-sleep 3
 
@@ -396,7 +399,69 @@ function RunPSconfig() {
     IISStart     
 }
     
+function CreateScheduleTask($addr, $cmd, $params, $taskName, $user, $password, $descirption, $wait = $false) {
 
+    # TODO chck if paramser are missing
+    if ($addr -eq $env:computername) {
+        $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+        if ($found) {
+            $found | Unregister-ScheduledTask -Confirm:$false 
+        }
+
+        # New SCHTASK parameters           
+        $a = New-ScheduledTaskAction -Execute $cmd -Argument $params 
+        $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+        $task = New-ScheduledTask -Action $a -Principal $p -Description $descirption 
+            
+        # Create SCHTASK                
+        Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green            
+        Register-ScheduledTask -InputObject  $task  -User $user -Password $password -TaskName $taskName 
+            
+        # Start SCHTASK 
+        start-sleep 3                           
+        Start-ScheduledTask -TaskName $taskName 
+        Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
+    }    
+    else {
+
+        # Remove SCHTASK if found
+        $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
+        if ($found) {
+            $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
+        }
+
+        # New SCHTASK parameters                          
+        $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -CimSession $addr
+        $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+        $task = New-ScheduledTask -Action $a -Principal $p -Description $descirption 
+            
+        # Create SCHTASK
+        Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green                  
+        Register-ScheduledTask -InputObject $task -TaskName $taskName -CimSession $addr -User $user -Password $password 
+            
+        # Start SCHTASK 
+        start-sleep 3           
+        Start-ScheduledTask -TaskName $taskName -CimSession $addr
+        Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
+    }
+        
+    # Wait for scheduled task to complete; return to ready state
+    if ($wait) {
+        do {
+  
+            if ($addr -eq $env:computername) {
+                $taskStatus = (Get-ScheduledTask -TaskName $taskName).State -ne 'Ready'
+            }
+            else {
+                $taskStatus = (Get-ScheduledTask -TaskName $taskName -CimSession $addr).State -ne 'Ready'
+            }
+
+            Write-Host "." -NoNewLine
+            Start-Sleep 60
+        }  
+        while ($taskStatus)
+    }
+}
 
 function WaitEXE($patchName) {
     Write-Host "===== WaitEXE ===== $(Get-Date)" -Fore "Yellow"
@@ -529,19 +594,32 @@ function WaitReboot() {
     Get-PSSession | Remove-PSSession -Confirm:$false
 }
 
-function LocalReboot() {
-    # Create Regkey
-    New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\" -Name "RunOnce" -ErrorAction SilentlyContinue | Out-Null
-    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "SPPatchify" -Value "PowerShell -executionpolicy unrestricted -file ""$root\SPPatchify.ps1"" -PhaseTwo" -ErrorAction SilentlyContinue | Out-Null
-	
-    # Reboot
-    Write-Host "`n ===== REBOOT LOCAL ===== $(Get-Date)"
-    $th = [Math]::Round(((Get-Date) - $start).TotalHours, 2)
-    Write-Host "Duration Total Hours: $th" -Fore "Yellow"
-    Stop-Transcript
-    Start-Sleep 5
-    Restart-Computer -Force
-    Exit
+function LocalReboot($parmater) {
+    # Create Schedued Job
+    Get-ScheduledJob -Name "SSPparmater" -ErrorAction SilentlyContinue | Unregister-ScheduledJob -Force
+    #To run as highest level add schedulejoboption
+    if ($parmater) {
+        $ScheduledJobOption = New-ScheduledJobOption -RunElevated
+
+        $JobTrigge = New-JobTrigger -AtStartup -RandomDelay 00:01:00
+
+        $Cred = GetFarmAccountCredentials
+
+        Register-ScheduledJob -ScheduledJobOption $ScheduledJobOption -Trigger $JobTrigge -Credential $Cred  -Name "SSPparmater" -FilePath $root\sppatchify.ps1 -ArgumentList $parmater
+    
+  
+ 
+
+
+        # Reboot
+        Write-Host "`n ===== REBOOT LOCAL ===== $(Get-Date)"
+        $th = [Math]::Round(((Get-Date) - $start).TotalHours, 2)
+        Write-Host "Duration Total Hours: $th" -Fore "Yellow"
+        Stop-Transcript
+        Start-Sleep 5
+        Restart-Computer -Force
+        Exit
+    }
 }
 function LaunchPhaseThree() {
     # Launch script in new windows for Phase Three - Add Content
@@ -757,7 +835,7 @@ function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
     #write-host "sb.GetType().Name: $($ScriptBlock.GetType().Name)"
     # write-host "ScriptBlock: $ScriptBlock"
     $session = GetRemotePSSession $server (GetFarmAccountCredentials)
-    if ($env:computername -eq $server) {
+    if ($env:computername -eq $server -or $server -eq "localhost") {
 
         if ($isJob) {
             Start-Job -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
@@ -948,55 +1026,42 @@ function DismountContentDatabase($needUpgradeOnly = $False) {
    
 }
 
-function UpdateContentDatabase () {
-    MountContentDatabase -UpdateOnly $true
-}
-
-function MountContentDatabase($UpdateOnly = $false) {
+function MountContentDatabase() {
     # ChangeContent $true
     # create script block based on saved content database
-    if ($UpdateOnly) {
-        $SPContentDatabase = Get-SPContentDatabase
-        if ($SPContentDatabase) {
-            $dbs = $SPContentDatabase | ForEach-Object { 
-                $wa = $_.WebApplication.Url; $_ | Select-Object Name, NormalizedDataSource, @{n = "WebApp"; e = { $wa } } 
-            } 
-        }
+    $files = Get-ChildItem "$logFolder\contentdbs-*.csv" | Sort-Object LastAccessTime -Desc
+    if ($files -is [Array]) {
+        $files = $files[0]
     }
-    else {
-        $files = Get-ChildItem "$logFolder\contentdbs-*.csv" | Sort-Object LastAccessTime -Desc
-        if ($files -is [Array]) {
-            $files = $files[0]
-        }
-        
-        # Loop databases and create script block
-        if ($files) {
-            Write-Host "Content DB - from CSV $($files.Fullname)" -Fore Yellow
-            $dbs = Import-Csv $files.Fullname  
-        }
-        else {
-            Write-Host "Content DB - CSV not found" -Fore Yellow
-        }
-    }
-    if ($dbs) {
-        Write-Host "Content DB - create script blocks" -Fore Yellow 
-        $sb =@()     
+    $sb = @()
+    # Loop databases and create script block
+    if ($files) {
+        Write-Host "Content DB - from CSV $($files.Fullname)" -Fore Yellow
+        $dbs = Import-Csv $files.Fullname  
+        Write-Host "Content DB - create script blocks" -Fore Yellow      
         foreach ($db in $dbs) {  
             $wa = [Microsoft.SharePoint.Administration.SPWebApplication]::Lookup($db.WebApp)
             if ($wa) {   
                                            
-                $sb2 = 'Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null   
+                $sb2 = '
+                        Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null   
                         $db = Get-SPContentDatabase | Where-Object {$_.Name -eq "' + $($db.name) + '"}  
                         If(-not $db) {Mount-SPContentDatabase -AssignNewDatabaseId -WebApplication "' + $($wa.url) + '" -Name "' + $($db.name) + '" -DatabaseServer "' + $($db.NormalizedDataSource) + '" | Out-Null}
                         $NeedsUpgrade = (Get-SPContentDatabase | Where-Object {$_.Name -eq "' + $($db.name) + '"}).NeedsUpgrade
-                        if($NeedsUpgrade){Upgrade-SPContentDatabase -Name "' + $($db.name) + '" -WebApplication "' + $($wa.url) + '" -ErrorAction SilentlyContinue -Confirm:$false | Out-Null}'
+                        if($NeedsUpgrade){Upgrade-SPContentDatabase -Name "' + $($db.name) + '" -WebApplication "' + $($wa.url) + '" -ErrorAction SilentlyContinue -Confirm:$false | Out-Null}
+                '
                 $sb += $sb2           
             }
         }
         $serverAddress = getFarmServers | ForEach-Object { $_.Address }
         DistributedJobs -scriptBlocks $sb -servers $serverAddress -credentials (GetFarmAccountCredentials)
-    }            
+            
+    }
+    else {
+        Write-Host "Content DB - CSV not found" -Fore Yellow
+    }
 }
+
 
 function ReportContentDatabases() {
     $dbs = Get-SPContentDatabase
@@ -2004,11 +2069,15 @@ function Main() {
     # Clean up
     Get-PSSession | Remove-PSSession -Confirm:$false
 
+    $mainArgs = $args
+
     # Local farm servers
     # $global:servers = Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
     If (!(Test-Path -Path $root -PathType Container)) {
         $remoteRoot = MakeRemote $root
     }
+
+    $remoteRoot = MakeRemote $root
 
     # List - Target servers
     <#
@@ -2222,9 +2291,9 @@ function Main() {
         # PauseSharePointSearch
         RunAndInstallCU
         VerifyCUInstalledOnAllServers         
-        RunConfigWizard 
-        StartSharePointSearch
-        DisplayCA        
+        #RunConfigWizard 
+        #StartSharePointSearch
+        #DisplayCA        
     } 
 
     if ($DismountContentDatabase) {   
@@ -2250,16 +2319,16 @@ function Main() {
     if ($UpgradeContent) {  
         # Run PSconfigure on all servers
         # does not require remoting      
-        UpdateContentDatabase 
+        UpgradeContent
     } 
 
-    if ($Standard) {        
-        #PauseSharePointSearch
-        RunAndInstallCU
-        WaitReboot
-        VerifyCUInstalledOnAllServers 
-        UpdateContentDatabase 
-        RunPSconfig
+    if ($Standard) {      
+        <# if ("reboot" in $mainArgs) {
+            
+        }#>
+        RunAndInstallCU($mainArgs)        
+        VerifyCUInstalledOnAllServers  
+        RunConfigWizard
         StartSharePointSearch
         DisplayCA
     }
@@ -2270,7 +2339,8 @@ function Main() {
         PauseSharePointSearch
         RunAndInstallCU
         VerifyCUInstalledOnAllServers 
-        DismountContentDatabase #Advanced        
+        DismountContentDatabase #Advanced
+        RunConfigWizard
         MountContentDatabase #Advanced
         StartSharePointSearch
         DisplayCA
@@ -2369,22 +2439,11 @@ function Main() {
     #>
     
     # Calculate Duration and Run Cleanup
+    Get-ScheduledJob -Name "SSPparmater" -ErrorAction SilentlyContinue | Unregister-ScheduledJob -Force
     CalcDuration
     FinalCleanUp
+  
     Write-Host "DONE"
-
-    if ($false) {
-        # LocalReboot
-    
-        foreach ($server in getRemoteServers) {
-            
-            Write-Host "Reboot $($server)" -Fore Yellow
-            Restart-Computer -ComputerName $server.Name -Force
-            Start-Sleep 1
-            
-        }
-        Restart-Computer -Force
-    }
 }
 
 function rebootFarm() {
