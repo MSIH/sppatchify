@@ -301,7 +301,30 @@ function RunAndInstallCU($mainArgs) {
         }
 
         # WaitEXE Watch EXE binary complete
-        WaitEXE $patchName
+        WaitEXE $patchName      
+    }
+
+    #delete scheduled task
+    $taskName = "SPP_InstallCU"
+
+    # Loop - Run Task Scheduler
+    foreach ($server in getFarmServers) {       
+        $addr = $server.Address
+        Write-Host "Unregister task $taskName from - $addr" -Fore Green
+        if ($addr -eq $env:computername) {              
+            # Remove SCHTASK if found
+            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+            if ($found) {
+                $found | Unregister-ScheduledTask -Confirm:$false 
+            }   
+        }
+        else {
+            # Remove SCHTASK if found
+            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
+            if ($found) {
+                $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
+            }
+        }
     }
 	
     # SharePoint 2016 Force Reboot
@@ -316,17 +339,44 @@ function RunAndInstallCU($mainArgs) {
                 Restart-Computer -ComputerName $addr -Force
             }
         }        
-        LocalReboot RunConfigWizard
-        
-    }
+        #LocalReboot RunConfigWizard    
+        $taskName = "SPP_RunPSconfigAfterReboot"
+        $cmd = "powershell.exe"
+        $params = "-ExecutionPolicy Bypass -Command &{ & using:$root\sppatchify\sppatchify.ps1 -RunConfigWizard}"
+
+        $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+        if ($found) {
+            $found | Unregister-ScheduledTask -Confirm:$false 
+        }
+
+        # New SCHTASK parameters
+        $user = GetFarmAccount 
+        $a = New-ScheduledTaskAction -Execute $cmd -Argument $params 
+        $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+        $t = New-ScheduledTaskTrigger -AtStartup -Delay (New-TimeSpan -Minutes 2)
+        $task = New-ScheduledTask -Action $a -Principal $p -Trigger $t -Description "Run SPPatchify RunPSconfig after reboot" 
+        # Create SCHTASK                
+        Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
+        $password = (GetFarmAccountPassword)
+        Register-ScheduledTask -InputObject $task -User $user -Password $password -TaskName $taskName 
+        start-sleep 3
+
+        Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
+        Stop-Transcript
+        Restart-Computer  -Force
+    } 
+
 }
 
+
 function RunPSconfig() {
-    <#
-   create task
-   run task
-   while until finish
-   #> 
+    $taskName = "SPP_RunPSconfigAfterReboot"
+    Write-Host " Remove Task after reboot  ===== $(Get-Date)" -Fore "Yellow"
+    $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+    if ($found) {
+        $found | Unregister-ScheduledTask -Confirm:$false 
+    }
+
     Write-Host " RunPSconfig ===== $(Get-Date)" -Fore "Yellow"
        
     $taskName = "SPP_RunPSconfig"
@@ -395,7 +445,29 @@ function RunPSconfig() {
             Start-Sleep 60
         }  
         while ($taskStatus)
-    }   
+    }  
+    
+    #delete scheduled tasks
+    $taskName = "SPP_RunPSconfig"
+    foreach ($server in getFarmServers) {
+        # Local PC - No reboot        
+        $addr = $server.Address
+        Write-Host "Unregister task $taskName from $addr" -Fore Green
+        if ($addr -eq $env:computername) {
+            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+            if ($found) {
+                $found | Unregister-ScheduledTask -Confirm:$false 
+            }
+        }    
+        else {
+            # Remove SCHTASK if found
+            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
+            if ($found) {
+                $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
+            }           
+        }
+    }
+    # restart IIS and app pools on all servers
     IISStart     
 }
     
@@ -2367,79 +2439,8 @@ function Main() {
         StartSharePointSearch
         DisplayCA
     }
-
-    <#>
-    # Core steps
-    if (!$phaseTwo -and !$phaseThree) {
-        if ($copyMedia) {
-            # Copy media only (switch -C)
-            CopyMedia "Copy"
-        }
-        else {
-            # Phase One - Binary EXE.  Quick mode EXE only.
-            if ($quick) {
-                RunAndInstallCU
-                WaitReboot
-            }
-            else {
-                PatchMenu
-                EnablePSRemoting
-                ClearCacheIni
-                CopyMedia "Copy"
-                SafetyEXE
-                SaveServiceInst
-                ChangeServices $true
-                if (!$skipProductLocal) {
-                    ProductLocal
-                }
-                StopSPDistributedCache
-                ChangeServices $false
-                IISStart
-                RunAndInstallCU
-                WaitReboot
-            }
-            if (!$skipProductLocal) {
-                ProductLocal
-            }
-            if (!$phaseOneBinary) {
-                # Reboot and queue Phase two
-                LocalReboot
-            }
-        }
-    }
-    # Phase Two - SP Config Wizard
-    if ($phaseTwo) {
-        VerifyCUInstalledOnAllServers
-        DetectAdmin
-        if (!$onlineContent) {
-            ChangeContent $false
-        }
-        ChangeServices $true
-        if (!$skipProductLocal) {
-            ProductLocal
-        }
-        RunConfigWizard
-        # Content Online
-        if (!$onlineContent) {
-            ChangeContent $true
-        }
-        # Launch new window - Phase Three
-        LaunchPhaseThree
-    }
-    # Phase Three - Add Content
-    if ($phaseThree) {
-        if (!$onlineContent) {
-            ChangeContent $true
-        }
-        UpgradeContent
-        IISStart
-        StartServiceInst
-        DisplayCA
-    }
-    #>
     
-    # Calculate Duration and Run Cleanup
-    Get-ScheduledJob -Name "SSPparmater" -ErrorAction SilentlyContinue | Unregister-ScheduledJob -Force
+    # Calculate Duration and Run Cleanup    
     CalcDuration
     FinalCleanUp
   
