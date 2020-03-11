@@ -18,26 +18,26 @@
 
 [CmdletBinding()]
 param (
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -d -downloadMedia to execute Media Download only.  No farm changes.  Prep step for real patching later.')]
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -d -downloadMediaOnly to execute Media Download only.  No farm changes.  Prep step for real patching later.')]
     [Alias("d")]
-    [switch]$downloadMedia,
+    [switch]$downloadMediaOnly,
     [string]$downloadVersion,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -rebootFarm.')] 
-    [switch]$rebootFarm,    
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -rebootFarmOnly.')] 
+    [switch]$rebootFarmOnly,    
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -StartSharePointSearch.')] 
-    [switch]$StartSharePointSearch,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -StartSharePointSearchOnly.')] 
+    [switch]$StartSharePointSearchOnly,
     
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -PauseSharePointSearch.')] 
-    [switch]$PauseSharePointSearch,  
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -PauseSharePointSearchOnly.')] 
+    [switch]$PauseSharePointSearchOnly,  
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -c -CopyMedia to copy \media\ across all peer machines.  No farm changes.  Prep step for real patching later.')]
     [switch]$CopyMedia,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -v -showVersionExit to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -v -showVersionOnly to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
 
-    [switch]$showVersionExit, 
+    [switch]$showVersionOnly, 
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -phaseTwo to execute Phase Two after local reboot.')]
     [switch]$phaseTwo,
@@ -52,13 +52,13 @@ param (
     [switch]$remoteSessionSSL,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -test to open Remote PS Session and verify connectivity all farm members.')]
-    [switch]$testRemotePSExit,
+    [switch]$testRemotePSOnly,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -targetServers to run for specific machines only.  Applicable to PhaseOne and PhaseTwo.')]
     [string[]]$targetServers,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -productlocalExit to execute remote cmdlet [Get-SPProduct -Local] on all servers in farm, or target/wave servers only if given.')]
-    [switch]$productlocalExit,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -productlocalOnly to execute remote cmdlet [Get-SPProduct -Local] on all servers in farm, or target/wave servers only if given.')]
+    [switch]$productlocalOnly,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -mount to execute Mount-SPContentDatabase to load CSV and attach content databases to web applications.')]
     [string]$mount,
@@ -69,20 +69,20 @@ param (
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -bypass to run with PACKAGE.BYPASS.DETECTION.CHECK=1')]
     [switch]$bypass, 
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -saveServiceInstanceExit to snapshot CSV with current Service Instances running.')]
-    [switch]$saveServiceInstanceExit,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -saveServiceInstanceOnly to snapshot CSV with current Service Instances running.')]
+    [switch]$saveServiceInstanceOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -reportContentDatabasesExit to snapshot CSV with Content Databases.')]
-    [switch]$reportContentDatabasesExit,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -reportContentDatabasesOnly to snapshot CSV with Content Databases.')]
+    [switch]$reportContentDatabasesOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -startSharePointRelatedServicesExit to start sharepoint and iis services.')]
-    [switch]$startSharePointRelatedServicesExit,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -startSharePointRelatedServicesOnly to start sharepoint and iis services.')]
+    [switch]$startSharePointRelatedServicesOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -stopSharePointRelatedServicesExit to stop sharepoint and iis services.')]
-    [switch]$stopSharePointRelatedServicesExit,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -stopSharePointRelatedServicesOnly to stop sharepoint and iis services.')]
+    [switch]$stopSharePointRelatedServicesOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -EnablePSRemoting to enable CredSSP.')]
-    [switch]$EnablePSRemoting,
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -EnablePSRemotingOnly to enable CredSSP.')]
+    [switch]$EnablePSRemotingOnly,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -ClearCacheIni to clear chache ini folder.')]
     [switch]$ClearCacheIni,
@@ -122,6 +122,322 @@ param (
 # Plugin
 Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
 Import-Module WebAdministration -ErrorAction SilentlyContinue | Out-Null
+
+$host.ui.RawUI.WindowTitle = "SPPatchify"
+$rootCmd = $MyInvocation.MyCommand.Definition
+$root = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
+$maxattempt = 3
+$maxrebootminutes = 120
+$logFolder = "$root\log"
+
+function Main() {
+    # Clean up
+    Get-PSSession | Remove-PSSession -Confirm:$false
+
+    $mainArgs = $args
+
+    # what does this do
+    If (!(Test-Path -Path $root -PathType Container)) {
+        $remoteRoot = MakeRemote $root
+    }
+
+    $remoteRoot = MakeRemote $root
+
+    # Local farm servers - note removed global variables
+    # $global:servers = Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
+    # List - Target servers
+    <#
+    if ($targetServers) {
+        $global:servers = Get-SPServer | Where-Object { $targetServers -contains $_.Name } | Sort-Object Address
+    }
+    #>    
+    
+    #Create Local Log Folders
+    If (!(Test-Path -Path $logFolder -PathType Container)) {
+        mkdir "$logFolder" -ErrorAction SilentlyContinue | Out-Null
+    }
+    If (!(Test-Path -Path $logFolder\msp -PathType Container)) {
+        mkdir "$logFolder\msp" -ErrorAction SilentlyContinue | Out-Null
+    }
+
+    # Start Logging
+    $start = Get-Date
+    $when = $start.ToString("yyyy-MM-dd-hh-mm-ss")
+    $logFile = "$logFolder\SPPatchify-$when.txt"
+    Start-Transcript $logFile          
+
+    # Download media
+    if ($downloadMediaOnly) {
+        PatchRemoval
+        PatchMenu 
+        Stop-Transcript; Exit       
+    }    
+
+    # Halt if no servers detected
+    if ((getFarmServers).Count -eq 0) {
+        Write-Host "HALT - POWERSHELL ERROR - No SharePoint servers detected.  Close this window and run from new window." -Fore Red
+        Stop-Transcript; Exit        
+    }
+    else {
+        Write-Host "Servers Online: $((getFarmServers).Count)"   
+    }   
+
+    # Create remote log folders
+    LoopRemoteCmd "Create log directory on" "mkdir '$logFolder' -ErrorAction SilentlyContinue | Out-Null"
+    LoopRemoteCmd "Create log directory on" "mkdir '$logFolder\msp' -ErrorAction SilentlyContinue | Out-Null"  
+
+    if ($rebootFarmOnly) {
+        rebootFarm
+        Stop-Transcript; Exit       
+    }
+
+    if ($EnablePSRemotingOnly) {  
+        # Enable CredSSP remoting      
+        EnablePSRemoting
+        Stop-Transcript; Exit
+    }
+
+    # Enable CredSSP remoting      
+    EnablePSRemoting
+
+    # Verify Remote PowerShell
+    if (-not (VerifyRemotePS)) {
+        return
+    }
+    
+    # Save Service Instance
+    if ($saveServiceInstanceOnly) {
+        SaveServiceInst
+        # display file
+        Stop-Transcript; Exit
+    }
+
+    # Run SPPL to detect new binary patches
+    if ($productlocalOnly) {
+        TestRemotePS
+        ProductLocal
+        Stop-Transcript; Exit
+    }
+        
+    # Test PowerShell
+    if ($testRemotePSOnly) {
+        TestRemotePS
+        Stop-Transcript; Exit
+    }
+    
+	
+    # Display version
+    if ($showVersionOnly) {
+        ShowVersion
+        Stop-Transcript; Exit
+    }
+ 
+    # Mount Databases
+    if ($reportContentDatabasesOnly) {
+        ReportContentDatabases
+        # display file
+        Stop-Transcript; Exit
+    }
+
+    #  search
+    if ($PauseSharePointSearchOnly) {
+        PauseSharePointSearch
+        # display file
+        Stop-Transcript; Exit
+    }
+
+    if ($StartSharePointSearchOnly) {
+        StartSharePointSearch
+        # display file
+        Stop-Transcript; Exit
+    }
+
+
+
+    <# Change Services
+    if ($changeServices.ToUpper() -eq "TRUE") {
+        changeServices $true
+        Exit
+    }
+    if ($changeServices.ToUpper() -eq "FALSE") {
+        changeServices $false
+        Exit
+    }
+    #>
+
+    # Change Services
+    if ($startSharePointRelatedServicesOnly) {
+        changeServices $true
+        Stop-Transcript; Exit
+    }
+    if ($stopSharePointRelatedServicesOnly) {
+        changeServices $false
+        Stop-Transcript; Exit
+    }
+
+    # Install App_Offline
+    if ($appOffline.ToUpper() -eq "TRUE") {
+        AppOffline $true
+        Stop-Transcript; Exit
+    }
+    if ($appOffline.ToUpper() -eq "FALSE") {
+        AppOffline $false
+        Stop-Transcript; Exit
+    }	
+
+    function StartSharePointRelatedServices() {
+        changeServices $true
+       
+    }
+
+    function StopSharePointRelatedServices() {
+        changeServices $false
+    }
+
+    if ($CopyMedia) {   
+        # Copy media only (switch -C)  
+        # does not require remoting, use unc path    
+        CopyMedia "Copy"
+    }  
+    
+    if ($ClearCacheIni) {  
+        # Cler the Cache INI Folder 
+        # does not require remoting, use unc path     
+        ClearCacheIni
+    }   
+    
+    if ($SaveServiceInst) { 
+        # Save SP Service Instances that are online to CVS file  
+        # does not require remoting    
+        SaveServiceInst
+    }
+    
+    if ($StopSPDistributedCache) { 
+        # Stop StopSPDistributedCache on all farm servers  
+        # uses CredSSP remoting    
+        StopSPDistributedCache
+    }
+    
+    if ($IISStart) {   
+        # Start IIS App Pools, Sites, IIS Admin service, and Web service
+        # uses CredSSP remoting    
+        IISStart
+    }
+
+    # Run CU, wait for servers to reboot, verify installed on all servers
+    if ($RunAndInstallCU) {   
+        # create scheduled task to run CU
+        # watch and update web page
+        # uses CredSSP remoting
+        # CopyMedia "Copy"    
+        # PauseSharePointSearch
+        RunAndInstallCU
+        VerifyCUInstalledOnAllServers         
+        #RunConfigWizard 
+        #StartSharePointSearch
+        #DisplayCA        
+    } 
+
+    if ($DismountContentDatabase) {   
+        # Run PSconfigure on all servers
+        # does not require remoting     
+        DismountContentDatabase $needsUpdateOnly
+    } 
+
+
+    if ($RunConfigWizard) {   
+        # Run PSconfigure on all servers
+        # uses CredSSP remoting    
+        #RunConfigWizard
+        RunPSconfig
+    } 
+
+    if ($MountContentDatabase) {  
+        # Run PSconfigure on all servers
+        # does not require remoting      
+        MountContentDatabase
+    } 
+
+    if ($UpgradeContent) {  
+        # Run PSconfigure on all servers
+        # does not require remoting      
+        UpgradeContent
+    } 
+
+    if ($Standard) {      
+
+        RunAndInstallCU($mainArgs)        
+        VerifyCUInstalledOnAllServers  
+        RunConfigWizard
+        StartSharePointSearch
+        DisplayCA
+    }
+
+    if ($Advanced) {
+        # dismount databases before running psconfig
+        # mount databases distributed  
+        # PauseSharePointSearch - this can take up to an hour, so do before
+        RunAndInstallCU($mainArgs)   
+        VerifyCUInstalledOnAllServers 
+        DismountContentDatabase 
+        RunConfigWizard
+        MountContentDatabase 
+        StartSharePointSearch
+        DisplayCA
+    }
+
+    if ($Complete) {
+        # dismount databases before running psconfig
+        # mount databases distributed           
+        PatchRemoval
+        PatchMenu    
+        CopyMedia "Copy"
+        ClearCacheIni #Complete
+        IISStart #Complete
+        SaveServiceInst  
+        PauseSharePointSearch      
+        RunAndInstallCU($mainArgs)           
+        VerifyCUInstalledOnAllServers 
+        DismountContentDatabase #Advanced
+        RunConfigWizard
+        MountContentDatabase #Advanced
+        StartSharePointRelatedServices #Complete
+        UpgradeContent
+        StartSharePointSearch
+        DisplayCA
+    }  
+
+    #remove all scheduled tasks
+    $taskName = "SSP_*"
+    foreach ($server in getFarmServers) {       
+        $addr = $server.Address
+        Write-Host "Unregister task $taskName from - $addr" -Fore Green
+        if ($addr -eq $env:computername) {              
+            # Remove SCHTASK if found
+            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+            if ($found) {
+                $found | Unregister-ScheduledTask -Confirm:$false 
+            }   
+        }
+        else {
+            # Remove SCHTASK if found
+            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
+            if ($found) {
+                $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
+            }
+        } 
+    }
+            
+    # remove all pssession
+    Get-PSSession | Remove-PSSession -Confirm:$false
+
+    # Calculate Duration and Run Cleanup    
+    CalcDuration
+  
+    Write-Host "DONE ===$(Get-Date)"
+    Stop-Transcript
+}
+
 
 
 #region binary EXE
@@ -182,7 +498,7 @@ function CopyMedia($action = "Copy") {
 
 function VerifyCUInstalledOnAllServers() {
     # Display server upgrade
-    Write-Host "Farm Servers - Upgrade Status " -Fore "Yellow"
+    Write-Host "Farm Servers - Upgrade Status $(Get-Date)" -Fore "Yellow"
     (Get-SPProduct).Servers | Select-Object Servername, InstallStatus | Sort-Object Servername | Format-Table -AutoSize
 
     $halt = (Get-SPProduct).Servers | Where-Object { $_.InstallStatus -eq "InstallRequired" }
@@ -194,6 +510,7 @@ function VerifyCUInstalledOnAllServers() {
 }
 
 function SafetyEXE() {
+    # notused
     Write-Host "===== SafetyEXE ===== $(Get-Date)" -Fore "Yellow"
 
     # Count number of files.   Must be 3 for SP2013 (major ver 15)
@@ -262,17 +579,16 @@ function RunAndInstallCU($mainArgs) {
                 $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder 
                 $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
 
-                # Create SCHTASK
+                # Create and Start SCHTASK
                 
                 Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
                 Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -Description "Install SharePoint CU created by SPPatchify Tool" 
-
-                # Event log START
-                New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
-                Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr
                 Start-ScheduledTask -TaskName $taskName 
                 Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
 
+                # Event log START
+                New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
+                Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr              
             }
             else {
 
@@ -288,15 +604,15 @@ function RunAndInstallCU($mainArgs) {
                 $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder -CimSession $addr
                 $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
 
-                # Create SCHTASK
+                # Create and start SCHTASK
                 Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
                 Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -CimSession $addr -Description "Install SharePoint CU created by SPPatchify Tool" 
+                Start-ScheduledTask -TaskName $taskName -CimSession $addr
+                Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
 
                 # Event log START
                 New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
-                Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr
-                Start-ScheduledTask -TaskName $taskName -CimSession $addr
-                Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
+                Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr            
             }
         }
 
@@ -305,8 +621,6 @@ function RunAndInstallCU($mainArgs) {
     }
 
     #delete scheduled task
-    $taskName = "SPP_InstallCU"
-
     # Loop - Run Task Scheduler
     foreach ($server in getFarmServers) {       
         $addr = $server.Address
@@ -331,7 +645,6 @@ function RunAndInstallCU($mainArgs) {
     $ver = (Get-SPFarm).BuildVersion.Major
     if ($ver -eq 16) {
         Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
-
         foreach ($server in getRemoteServers) {
             $addr = $server.Address
             if ($addr -ne $env:computername) {
@@ -339,10 +652,11 @@ function RunAndInstallCU($mainArgs) {
                 Restart-Computer -ComputerName $addr -Force
             }
         }        
-        #LocalReboot RunConfigWizard    
+        #LocalReboot RunConfigWizard  
+        $rebootArgs = "-RunConfigWizard", "-AfterReboot"
         $taskName = "SPP_RunPSconfigAfterReboot"
         $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
-        $params = "-ExecutionPolicy Bypass -File '$root\sppatchify.ps1' -RunConfigWizard"
+        $params = "-ExecutionPolicy Bypass -File '$root\sppatchify.ps1' $rebootArgs"
 
         $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
         if ($found) {
@@ -354,7 +668,7 @@ function RunAndInstallCU($mainArgs) {
         $a = New-ScheduledTaskAction -Execute $cmd -Argument $params 
         $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
         $t = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 2)
-        $task = New-ScheduledTask -Action $a -Principal $p -Trigger $t -Description "Run SPPatchify RunPSconfig after reboot" 
+        $task = New-ScheduledTask -Action $a -Principal $p -Trigger $t -Description "Run SPPatchify $rebootArgs after reboot" 
         # Create SCHTASK                
         Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
         $password = (GetFarmAccountPassword)
@@ -366,6 +680,20 @@ function RunAndInstallCU($mainArgs) {
         Restart-Computer  -Force
     } 
 
+}
+
+function Sendmail($from = "SharePointPatching@nih.gov", $to = "ContentDeploymentMonitoring@woodbournesolutions.com", $subject = "PS Patchify Notice", $body) {
+
+    $MailMessage = New-Object system.net.mail.mailmessage
+    $MailMessage.From = $from
+    $MailMessage.To.Add($to)       
+    $MailMessage.Subject = $subject 
+    $MailMessage.Body = $body
+    $MailMessage.IsBodyHtml = $true
+    $smtp = New-Object Net.Mail.SmtpClient
+    $smtp.Host = "mailfwd.nih.gov"
+    $smtp.Port = 25
+    $smtp.Send($MailMessage)
 }
 
 
@@ -381,7 +709,7 @@ function RunPSconfig() {
        
     $taskName = "SPP_RunPSconfig"
     $cmd = "powershell.exe"
-    $params = "-ExecutionPolicy Bypass -Command &{Add-PsSnapin Microsoft.SharePoint.PowerShell;& PSConfig.exe -cmd upgrade -inplace b2b -wait -cmd applicationcontent -install -cmd installfeatures -cmd secureresources -cmd services -install}"
+    $params = "-ExecutionPolicy Bypass -Command & { Add-PsSnapin Microsoft.SharePoint.PowerShell; & PSConfig.exe -cmd upgrade -inplace b2b -wait -cmd applicationcontent -install -cmd installfeatures -cmd secureresources -cmd services -install }"
     # Loop - Run Task Scheduler
     foreach ($server in getFarmServers) {
         # Local PC - No reboot
@@ -472,7 +800,7 @@ function RunPSconfig() {
 }
     
 function CreateScheduleTask($addr, $cmd, $params, $taskName, $user, $password, $descirption, $wait = $false) {
-
+# NotUsed at this time
     # TODO chck if paramser are missing
     if ($addr -eq $env:computername) {
         $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
@@ -550,7 +878,7 @@ function WaitEXE($patchName) {
             $addr = $server.Address
             $prct = [Math]::Round(($counter / (getFarmServers).Count) * 100)
             if ($prct) {
-                Write-Progress -Activity "Wait EXE ($prct %) $(Get-Date)" -Status $addr -PercentComplete $prct
+                Write-Progress -Activity "Wait EXE ($prct % ) $(Get-Date)" -Status $addr -PercentComplete $prct
             }
             $counter++
 
@@ -564,14 +892,14 @@ function WaitEXE($patchName) {
                 Start-Sleep 10
 
                 # Priority (High) from https://gallery.technet.microsoft.com/scriptcenter/Set-the-process-priority-9826a55f
-                $cmd = "`$proc = Get-Process -Name ""$patchName"" -ErrorAction SilentlyContinue; if (`$proc) { if (`$proc.PriorityClass.ToString() -ne ""High"") {`$proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::HIGH}}"
+                $cmd = "`$proc = Get-Process -Name ""$patchName"" -ErrorAction SilentlyContinue; if (`$proc) { if (`$proc.PriorityClass.ToString() -ne ""High"") { `$proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::HIGH } }"
                 $sb = [Scriptblock]::Create($cmd)        
                 InvokeCommand  -ScriptBlock $sb  -server $addr 
                 # Measure EXE
                 $proc | Select-Object Id, HandleCount, WorkingSet, PrivateMemorySize
 
                 # Count MSPLOG files
-                $cmd = "`$f=Get-ChildItem ""$logFolder\*MSPLOG*"";`$c=`$f.count;`$l=(`$f|sort last -desc|select -first 1).LastWriteTime;`$s=`$env:computername;New-Object -TypeName PSObject -Prop (@{""Server""=`$s;""Count""=`$c;""LastWriteTime""=`$l})"
+                $cmd = "`$f=Get-ChildItem ""$logFolder\*MSPLOG*""; `$c=`$f.count; `$l=(`$f | sort last -desc | select -first 1).LastWriteTime; `$s=`$env:computername; New-Object -TypeName PSObject -Prop (@{"" = `$s; ""Count"" = `$c; ""LastWriteTime"" = `$l })"
                 $sb = [Scriptblock]::Create($cmd)
                 InvokeCommand  -ScriptBlock $sb  -server $addr  
               
@@ -628,6 +956,7 @@ function WaitEXE($patchName) {
 }
 
 function WaitReboot() {
+    # NotUsed at this time
     Write-Host "`n===== WaitReboot ===== $(Get-Date)" -Fore "Yellow"
 	
     # Wait for farm peer machines to reboot
@@ -667,23 +996,17 @@ function WaitReboot() {
 }
 
 function LocalReboot($parmater) {
+    # NotUsed at this time
     # Create Schedued Job
     Get-ScheduledJob -Name "SSPparmater" -ErrorAction SilentlyContinue | Unregister-ScheduledJob -Force
     #To run as highest level add schedulejoboption
     if ($parmater) {
         $ScheduledJobOption = New-ScheduledJobOption -RunElevated
-
         $JobTrigge = New-JobTrigger -AtStartup -RandomDelay 00:01:00
-
         $Cred = GetFarmAccountCredentials
-
         Register-ScheduledJob -ScheduledJobOption $ScheduledJobOption -Trigger $JobTrigge -Credential $Cred  -Name "SSPparmater" -FilePath $root\sppatchify.ps1 -ArgumentList $parmater
     
-  
- 
-
-
-        # Reboot
+          # Reboot
         Write-Host "`n ===== REBOOT LOCAL ===== $(Get-Date)"
         $th = [Math]::Round(((Get-Date) - $start).TotalHours, 2)
         Write-Host "Duration Total Hours: $th" -Fore "Yellow"
@@ -694,6 +1017,7 @@ function LocalReboot($parmater) {
     }
 }
 function LaunchPhaseThree() {
+    # NotUsed at this time
     # Launch script in new windows for Phase Three - Add Content
     Start-Process "powershell.exe" -ArgumentList "$root\SPPatchify.ps1 -phaseThree"
 }
@@ -728,6 +1052,7 @@ function CalcDuration() {
     }
 }
 function FinalCleanUp() {
+    # NotUsed at this time
     # Close sessions
     Get-PSSession | Remove-PSSession -Confirm:$false
     Stop-Transcript
@@ -2130,346 +2455,6 @@ function AppOffline ($state) {
 }
 
 
-$host.ui.RawUI.WindowTitle = "SPPatchify v0.143 $phase"
-$rootCmd = $MyInvocation.MyCommand.Definition
-$root = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
-$maxattempt = 3
-$maxrebootminutes = 120
-$logFolder = "$root\log"
-
-function Main() {
-    # Clean up
-    Get-PSSession | Remove-PSSession -Confirm:$false
-
-    $mainArgs = $args
-
-    # Local farm servers
-    # $global:servers = Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
-    If (!(Test-Path -Path $root -PathType Container)) {
-        $remoteRoot = MakeRemote $root
-    }
-
-    $remoteRoot = MakeRemote $root
-
-    # List - Target servers
-    <#
-    if ($targetServers) {
-        $global:servers = Get-SPServer | Where-Object { $targetServers -contains $_.Name } | Sort-Object Address
-    }
-    #>
-
-    
-    
-
-    # Start LOG
-    $start = Get-Date
-    $when = $start.ToString("yyyy-MM-dd-hh-mm-ss")
-    $logFile = "$logFolder\SPPatchify-$when.txt"
-    If (!(Test-Path -Path $logFolder -PathType Container)) {
-        mkdir "$logFolder" -ErrorAction SilentlyContinue | Out-Null
-    }
-    If (!(Test-Path -Path $logFolder\msp -PathType Container)) {
-        mkdir "$logFolder\msp" -ErrorAction SilentlyContinue | Out-Null
-    }
-
-    Start-Transcript $logFile    
-
-    # Download media
-    if ($downloadMedia) {
-        PatchRemoval
-        PatchMenu 
-        Stop-Transcript; Exit       
-    }
-    if ($rebootFarm) {
-        rebootFarm
-        Stop-Transcript; Exit       
-    }
-
-    
-
-    # Halt if no servers detected
-    if ((getFarmServers).Count -eq 0) {
-        Write-Host "HALT - POWERSHELL ERROR - No SharePoint servers detected.  Close this window and run from new window." -Fore Red
-        Stop-Transcript; Exit        
-    }
-    else {
-        Write-Host "Servers Online: $((getFarmServers).Count)"   
-    }   
-
-    if ($EnablePSRemoting) {  
-        # Enable CredSSP remoting      
-        EnablePSRemoting
-        Stop-Transcript; Exit
-    }
-
-    # Enable CredSSP remoting      
-    EnablePSRemoting
-
-    # Verify Remote PowerShell
-    if (-not (VerifyRemotePS)) {
-        return
-    }
-    
-    # Save Service Instance
-    if ($saveServiceInstanceExit) {
-        SaveServiceInst
-        # display file
-        Stop-Transcript; Exit
-    }
-
-    # Run SPPL to detect new binary patches
-    if ($productlocalExit) {
-        TestRemotePS
-        ProductLocal
-        Stop-Transcript; Exit
-    }
-        
-    # Test PowerShell
-    if ($testRemotePSExit) {
-        TestRemotePS
-        Stop-Transcript; Exit
-    }
-    
-	
-    # Display version
-    if ($showVersionExit) {
-        ShowVersion
-        Stop-Transcript; Exit
-    }
- 
-    # Mount Databases
-    if ($reportContentDatabasesExit) {
-        ReportContentDatabases
-        # display file
-        Stop-Transcript; Exit
-    }
-
-    #  search
-    if ($PauseSharePointSearch) {
-        PauseSharePointSearch
-        # display file
-        Stop-Transcript; Exit
-    }
-
-    if ($StartSharePointSearch) {
-        StartSharePointSearch
-        # display file
-        Stop-Transcript; Exit
-    }
-
-
-
-    <# Change Services
-    if ($changeServices.ToUpper() -eq "TRUE") {
-        changeServices $true
-        Exit
-    }
-    if ($changeServices.ToUpper() -eq "FALSE") {
-        changeServices $false
-        Exit
-    }
-    #>
-
-    # Change Services
-    if ($startSharePointRelatedServicesExit) {
-        changeServices $true
-        Stop-Transcript; Exit
-    }
-    if ($stopSharePointRelatedServicesExit) {
-        changeServices $false
-        Stop-Transcript; Exit
-    }
-
-    # Install App_Offline
-    if ($appOffline.ToUpper() -eq "TRUE") {
-        AppOffline $true
-        Stop-Transcript; Exit
-    }
-    if ($appOffline.ToUpper() -eq "FALSE") {
-        AppOffline $false
-        Stop-Transcript; Exit
-    }	
-
-    function StartSharePointRelatedServices() {
-        changeServices $true
-       
-    }
-    function StopSharePointRelatedServices() {
-        changeServices $false
-    }
-
-    
-    # Read IIS Password
-    #ReadIISPW
-
-    #$global:cred = (GetFarmAccountCredentials)
-
-    
-
-    # WMI Uptime
-    # VerifyWMIUptime
-
-    # Prepare \LOG\ folder
-    LoopRemoteCmd "Create log directory on" "mkdir '$logFolder' -ErrorAction SilentlyContinue | Out-Null"
-    LoopRemoteCmd "Create log directory on" "mkdir '$logFolder\msp' -ErrorAction SilentlyContinue | Out-Null"
-
-    if ($CopyMedia) {   
-        # Copy media only (switch -C)  
-        # does not require remoting, use unc path    
-        CopyMedia "Copy"
-    }
-   
-    if ($EnablePSRemoting) {  
-        # Enable CredSSP remoting      
-        EnablePSRemoting
-    }
-    
-    if ($ClearCacheIni) {  
-        # Cler the Cache INI Folder 
-        # does not require remoting, use unc path     
-        ClearCacheIni
-    }
-    
-    if ($SafetyEXE) { 
-        # check if SP2013 media is three files  
-        # does not require remoting, use unc path     
-        SafetyEXE
-    }
-    
-    if ($SaveServiceInst) { 
-        # Save SP Service Instances that are online to CVS file  
-        # does not require remoting    
-        SaveServiceInst
-    }
-    
-    if ($StopSPDistributedCache) { 
-        # Stop StopSPDistributedCache on all farm servers  
-        # uses CredSSP remoting    
-        StopSPDistributedCache
-    }
-    
-    if ($IISStart) {   
-        # Start IIS App Pools, Sites, IIS Admin service, and Web service
-        # uses CredSSP remoting    
-        IISStart
-    }
-
-    # Run CU, wait for servers to reboot, verify installed on all servers
-    if ($RunAndInstallCU) {   
-        # create scheduled task to run CU
-        # watch and update web page
-        # uses CredSSP remoting
-        # CopyMedia "Copy"    
-        # PauseSharePointSearch
-        RunAndInstallCU
-        VerifyCUInstalledOnAllServers         
-        #RunConfigWizard 
-        #StartSharePointSearch
-        #DisplayCA        
-    } 
-
-    if ($DismountContentDatabase) {   
-        # Run PSconfigure on all servers
-        # does not require remoting     
-        DismountContentDatabase $needsUpdateOnly
-    } 
-
-
-    if ($RunConfigWizard) {   
-        # Run PSconfigure on all servers
-        # uses CredSSP remoting    
-        #RunConfigWizard
-        RunPSconfig
-    } 
-
-    if ($MountContentDatabase) {  
-        # Run PSconfigure on all servers
-        # does not require remoting      
-        MountContentDatabase
-    } 
-
-    if ($UpgradeContent) {  
-        # Run PSconfigure on all servers
-        # does not require remoting      
-        UpgradeContent
-    } 
-
-    if ($Standard) {      
-        <# if ("reboot" in $mainArgs) {
-            
-        }#>
-        RunAndInstallCU($mainArgs)        
-        VerifyCUInstalledOnAllServers  
-        RunConfigWizard
-        StartSharePointSearch
-        DisplayCA
-    }
-
-    if ($Advanced) {
-        # dismount databases before running psconfig
-        # mount databases distributed  
-        PauseSharePointSearch
-        RunAndInstallCU
-        VerifyCUInstalledOnAllServers 
-        DismountContentDatabase #Advanced
-        RunConfigWizard
-        MountContentDatabase #Advanced
-        StartSharePointSearch
-        DisplayCA
-    }
-
-    if ($Complete) {
-        # dismount databases before running psconfig
-        # mount databases distributed           
-        PatchRemoval
-        PatchMenu    
-        CopyMedia "Copy"
-        ClearCacheIni #Complete
-        IISStart #Complete
-        SaveServiceInst  
-        PauseSharePointSearch      
-        RunAndInstallCU
-        WaitReboot
-        VerifyCUInstalledOnAllServers 
-        DismountContentDatabase #Advanced
-        RunConfigWizard
-        MountContentDatabase #Advanced
-        StartSharePointRelatedServices #Complete
-        UpgradeContent
-        StartSharePointSearch
-        DisplayCA
-    }
-    
-    # Calculate Duration and Run Cleanup    
-    CalcDuration
-
-    #remove all scheduled tasks
-    $taskName = "SSP_*"
-    foreach ($server in getFarmServers) {       
-        $addr = $server.Address
-        Write-Host "Unregister task $taskName from - $addr" -Fore Green
-        if ($addr -eq $env:computername) {              
-            # Remove SCHTASK if found
-            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
-            if ($found) {
-                $found | Unregister-ScheduledTask -Confirm:$false 
-            }   
-        }
-        else {
-            # Remove SCHTASK if found
-            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
-            if ($found) {
-                $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
-            }
-        }
-    
-        # remove all pssession
-        Get-PSSession | Remove-PSSession -Confirm:$false
-  
-        Write-Host "DONE ===$(Get-Date)"
-        Stop-Transcript
-    }
-}
 
 function rebootFarm() {
     foreach ($server in getRemoteServers) {
