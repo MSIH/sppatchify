@@ -116,7 +116,10 @@ param (
     [switch]$Advanced,
 
     [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -Complete download and copy CU, clear ini cache, restart IIS,save status of services, pause search, install CU, dismount content databases, run psconfig, mount content databases, start services, and then start search.')]
-    [switch]$Complete
+    [switch]$Complete,
+
+    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -AfterReboot to tell command starting after reboot.')]
+    [switch]$AfterReboot
 )
 
 # Plugin
@@ -547,138 +550,145 @@ function RunAndInstallCU($mainArgs) {
 
     # Build CMD
     $files = Get-ChildItem "$root\media\*.exe" -Recurse | Sort-Object Name
-    foreach ($f in $files) {
-        # Display patch name
-        $name = $f.Name
-        Write-Host $name -Fore Yellow
-        $patchName = $name.replace(".exe", "")
-        $cmd = $f.FullName
-        Write-Host "$cmd ===== $(Get-Date)" -Fore "Yellow"
-        $params = "/passive /forcerestart /log:""$root\log\msp\$name.log"""
-        if ($bypass) {
-            $params += " PACKAGE.BYPASS.DETECTION.CHECK=1"
-        }
-        $taskName = "SPP_InstallCU"
+    If ($files) {
+        foreach ($f in $files) {
+            # Display patch name
+            $name = $f.Name
+            Write-Host $name -Fore Yellow
+            $patchName = $name.replace(".exe", "")
+            $cmd = $f.FullName
+            Write-Host "$cmd ===== $(Get-Date)" -Fore "Yellow"
+            $params = "/passive /forcerestart /log:""$root\log\msp\$name.log"""
+            if ($bypass) {
+                $params += " PACKAGE.BYPASS.DETECTION.CHECK=1"
+            }
+            $taskName = "SPP_InstallCU"
 
+            # Loop - Run Task Scheduler
+            foreach ($server in getFarmServers) {
+                # Local PC - No reboot
+                $addr = $server.Address
+                Write-Host $addr 
+                if ($addr -eq $env:computername) {
+                    $params = $params.Replace("forcerestart", "norestart")
+                    # Remove SCHTASK if found
+                    $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+                    if ($found) {
+                        $found | Unregister-ScheduledTask -Confirm:$false 
+                    }
+
+                    # New SCHTASK parameters
+                    $user = "System"
+                    $folder = Split-Path $f
+                    $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder 
+                    $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+
+                    # Create and Start SCHTASK
+                
+                    Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
+                    Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -Description "Install SharePoint CU created by SPPatchify Tool" 
+                    Start-ScheduledTask -TaskName $taskName 
+                    Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
+
+                    # Event log START
+                    New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
+                    Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr              
+                }
+                else {
+
+                    # Remove SCHTASK if found
+                    $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
+                    if ($found) {
+                        $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
+                    }
+
+                    # New SCHTASK parameters
+                    $user = "System"
+                    $folder = Split-Path $f
+                    $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder -CimSession $addr
+                    $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+
+                    # Create and start SCHTASK
+                    Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
+                    Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -CimSession $addr -Description "Install SharePoint CU created by SPPatchify Tool" 
+                    Start-ScheduledTask -TaskName $taskName -CimSession $addr
+                    Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
+
+                    # Event log START
+                    New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
+                    Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr            
+                }
+            }
+
+            # WaitEXE Watch EXE binary complete
+            WaitEXE $patchName      
+        }
+
+        #delete scheduled task
         # Loop - Run Task Scheduler
-        foreach ($server in getFarmServers) {
-            # Local PC - No reboot
+        foreach ($server in getFarmServers) {       
             $addr = $server.Address
-            Write-Host $addr 
-            if ($addr -eq $env:computername) {
-                $params = $params.Replace("forcerestart", "norestart")
+            Write-Host "Unregister task $taskName from - $addr" -Fore Green
+            if ($addr -eq $env:computername) {              
                 # Remove SCHTASK if found
                 $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
                 if ($found) {
                     $found | Unregister-ScheduledTask -Confirm:$false 
-                }
-
-                # New SCHTASK parameters
-                $user = "System"
-                $folder = Split-Path $f
-                $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder 
-                $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
-
-                # Create and Start SCHTASK
-                
-                Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
-                Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -Description "Install SharePoint CU created by SPPatchify Tool" 
-                Start-ScheduledTask -TaskName $taskName 
-                Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
-
-                # Event log START
-                New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
-                Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr              
+                }   
             }
             else {
-
                 # Remove SCHTASK if found
                 $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
                 if ($found) {
                     $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
                 }
-
-                # New SCHTASK parameters
-                $user = "System"
-                $folder = Split-Path $f
-                $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder -CimSession $addr
-                $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
-
-                # Create and start SCHTASK
-                Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
-                Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -CimSession $addr -Description "Install SharePoint CU created by SPPatchify Tool" 
-                Start-ScheduledTask -TaskName $taskName -CimSession $addr
-                Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
-
-                # Event log START
-                New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
-                Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr            
             }
         }
+	
+        # SharePoint 2016 Force Reboot
+        $ver = (Get-SPFarm).BuildVersion.Major
+        if ($ver -eq 16) {
+            Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
+            foreach ($server in getRemoteServers) {
+                $addr = $server.Address
+                if ($addr -ne $env:computername) {
+                    Write-Host "Reboot $($addr)" -Fore Yellow
+                    Restart-Computer -ComputerName $addr -Force
+                }
+            }        
+            #LocalReboot RunConfigWizard  
+            $rebootArgs = "-RunConfigWizard", "-AfterReboot"
+            $taskName = "SPP_RunPSconfigAfterReboot"
+            $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
+            $params = "-ExecutionPolicy Bypass -File '$root\sppatchify.ps1' $rebootArgs"
 
-        # WaitEXE Watch EXE binary complete
-        WaitEXE $patchName      
-    }
-
-    #delete scheduled task
-    # Loop - Run Task Scheduler
-    foreach ($server in getFarmServers) {       
-        $addr = $server.Address
-        Write-Host "Unregister task $taskName from - $addr" -Fore Green
-        if ($addr -eq $env:computername) {              
-            # Remove SCHTASK if found
             $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
             if ($found) {
                 $found | Unregister-ScheduledTask -Confirm:$false 
-            }   
-        }
-        else {
-            # Remove SCHTASK if found
-            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
-            if ($found) {
-                $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
             }
-        }
+
+            # New SCHTASK parameters
+            $user = GetFarmAccount 
+            $a = New-ScheduledTaskAction -Execute $cmd -Argument $params 
+            $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+            $t = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 2)
+            $task = New-ScheduledTask -Action $a -Principal $p -Trigger $t -Description "Run SPPatchify $rebootArgs after reboot" 
+            # Create SCHTASK                
+            Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
+            $password = (GetFarmAccountPassword)
+            Register-ScheduledTask -InputObject  $task -User $user -Password $password -TaskName $taskName 
+            start-sleep 3
+
+            Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
+            Stop-Transcript
+            Restart-Computer  -Force
+        } 
     }
-	
-    # SharePoint 2016 Force Reboot
-    $ver = (Get-SPFarm).BuildVersion.Major
-    if ($ver -eq 16) {
-        Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
-        foreach ($server in getRemoteServers) {
-            $addr = $server.Address
-            if ($addr -ne $env:computername) {
-                Write-Host "Reboot $($addr)" -Fore Yellow
-                Restart-Computer -ComputerName $addr -Force
-            }
-        }        
-        #LocalReboot RunConfigWizard  
-        $rebootArgs = "-RunConfigWizard", "-AfterReboot"
-        $taskName = "SPP_RunPSconfigAfterReboot"
-        $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
-        $params = "-ExecutionPolicy Bypass -File '$root\sppatchify.ps1' $rebootArgs"
-
-        $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
-        if ($found) {
-            $found | Unregister-ScheduledTask -Confirm:$false 
-        }
-
-        # New SCHTASK parameters
-        $user = GetFarmAccount 
-        $a = New-ScheduledTaskAction -Execute $cmd -Argument $params 
-        $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
-        $t = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 2)
-        $task = New-ScheduledTask -Action $a -Principal $p -Trigger $t -Description "Run SPPatchify $rebootArgs after reboot" 
-        # Create SCHTASK                
-        Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
-        $password = (GetFarmAccountPassword)
-        Register-ScheduledTask  $task -User $user -Password $password -TaskName $taskName 
-        start-sleep 3
-
-        Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
+    else {
+        write-host "No Install Files Found. Plaese run .\sppatchify.ps1 -downloadMedia"
         Stop-Transcript
-        Restart-Computer  -Force
-    } 
+        exit
+    }
 
 }
 
@@ -800,7 +810,7 @@ function RunPSconfig() {
 }
     
 function CreateScheduleTask($addr, $cmd, $params, $taskName, $user, $password, $descirption, $wait = $false) {
-# NotUsed at this time
+    # NotUsed at this time
     # TODO chck if paramser are missing
     if ($addr -eq $env:computername) {
         $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
@@ -899,7 +909,7 @@ function WaitEXE($patchName) {
                 $proc | Select-Object Id, HandleCount, WorkingSet, PrivateMemorySize
 
                 # Count MSPLOG files
-                $cmd = "`$f=Get-ChildItem ""$logFolder\*MSPLOG*""; `$c=`$f.count; `$l=(`$f | sort last -desc | select -first 1).LastWriteTime; `$s=`$env:computername; New-Object -TypeName PSObject -Prop (@{"" = `$s; ""Count"" = `$c; ""LastWriteTime"" = `$l })"
+                $cmd = "`$f=Get-ChildItem ""$logFolder\*MSPLOG*""; `$c=`$f.count; `$l=(`$f | sort last -desc | select -first 1).LastWriteTime; `$s=`$env:computername; New-Object -TypeName PSObject -Prop (@{""Server"" = `$s; ""Count"" = `$c; ""LastWriteTime"" = `$l })"
                 $sb = [Scriptblock]::Create($cmd)
                 InvokeCommand  -ScriptBlock $sb  -server $addr  
               
@@ -1006,7 +1016,7 @@ function LocalReboot($parmater) {
         $Cred = GetFarmAccountCredentials
         Register-ScheduledJob -ScheduledJobOption $ScheduledJobOption -Trigger $JobTrigge -Credential $Cred  -Name "SSPparmater" -FilePath $root\sppatchify.ps1 -ArgumentList $parmater
     
-          # Reboot
+        # Reboot
         Write-Host "`n ===== REBOOT LOCAL ===== $(Get-Date)"
         $th = [Math]::Round(((Get-Date) - $start).TotalHours, 2)
         Write-Host "Duration Total Hours: $th" -Fore "Yellow"
