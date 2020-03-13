@@ -358,7 +358,7 @@ function RunAndInstallCU($mainArgs) {
         # Create SCHTASK                
         Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
         $password = (GetFarmAccountPassword)
-        Register-ScheduledTask  $task -User $user -Password $password -TaskName $taskName 
+        Register-ScheduledTask -InputObject  $task -User $user -Password $password -TaskName $taskName 
         start-sleep 3
 
         Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
@@ -441,8 +441,8 @@ function RunPSconfig() {
                 $taskStatus = (Get-ScheduledTask -TaskName $taskName -CimSession $addr).State -ne 'Ready'
             }
 
-            Write-Host "." -NoNewLine
-            Start-Sleep 60
+            Write-Host "Running $taskName ===== $(Get-Date)" 
+            Start-Sleep 300
         }  
         while ($taskStatus)
     }  
@@ -616,7 +616,7 @@ function WaitEXE($patchName) {
                     Write-Host "RETRY ATTEMPT  # $attempt of $maxattempt" -Fore White -Backgroundcolor Red
 
                     if ($addr -eq $env:computername) { 
-                        Start-ScheduledTask -TaskName $taskName -
+                        Start-ScheduledTask -TaskName $taskName 
                     }
                     else { 
                         Start-ScheduledTask -TaskName $taskName -CimSession $addr
