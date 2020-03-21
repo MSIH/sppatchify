@@ -342,7 +342,7 @@ function RunAndInstallCU($mainArgs) {
         #LocalReboot RunConfigWizard    
         $taskName = "SPP_RunPSconfigAfterReboot"
         $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
-        $params = "-ExecutionPolicy Bypass -File '$root\sppatchify.ps1' -RunConfigWizard"
+        $params = "-ExecutionPolicy Bypass -File ""$root\sppatchify.ps1"" -RunConfigWizard"
 
         $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
         if ($found) {
