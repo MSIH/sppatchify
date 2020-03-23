@@ -561,7 +561,7 @@ function WaitEXE($patchName) {
                 # Monitor EXE process
                 $proc = Get-Process -Name $patchName -Computer $addr -ErrorAction SilentlyContinue
                 Write-Host "." -NoNewLine
-                Start-Sleep 10
+                Start-Sleep 600
 
                 # Priority (High) from https://gallery.technet.microsoft.com/scriptcenter/Set-the-process-priority-9826a55f
                 $cmd = "`$proc = Get-Process -Name ""$patchName"" -ErrorAction SilentlyContinue; if (`$proc) { if (`$proc.PriorityClass.ToString() -ne ""High"") {`$proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::HIGH}}"
@@ -3598,3 +3598,4 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.A
 }
 
 Main
+
