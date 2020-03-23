@@ -327,6 +327,7 @@ function Main() {
         IISStart
     }
 
+
     # Run CU, wait for servers to reboot, verify installed on all servers
     if ($RunAndInstallCU) {   
         # create scheduled task to run CU
@@ -341,11 +342,13 @@ function Main() {
         #DisplayCA        
     } 
 
+
     if ($DismountContentDatabase) {   
         # Run PSconfigure on all servers
         # does not require remoting     
         DismountContentDatabase $needsUpdateOnly
     } 
+
 
 
     if ($RunConfigWizard) {   
@@ -441,8 +444,6 @@ function Main() {
     Stop-Transcript
 }
 
-
-
 #region binary EXE
 function MakeRemote($path) {
     # Remote UNC
@@ -452,6 +453,7 @@ function MakeRemote($path) {
     }
     return (-join $char)
 }
+
 function CopyMedia($action = "Copy") {
     Write-Host "===== $action EXE ===== $(Get-Date)" -Fore "Yellow"
 
@@ -537,6 +539,7 @@ function SafetyEXE() {
     }
 }
 
+
 function RunAndInstallCU($mainArgs) {
     Write-Host "===== RunAndInstallCU ===== $(Get-Date)" -Fore "Yellow"
 
@@ -596,10 +599,8 @@ function RunAndInstallCU($mainArgs) {
                 }
                 else {
 
-                    # Remove SCHTASK if found
-                    $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
-                    if ($found) {
-                        $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
+                    if ($addr -eq $env:computername) { 
+                        Start-ScheduledTask -TaskName $taskName 
                     }
 
                     # New SCHTASK parameters
@@ -2465,7 +2466,6 @@ function AppOffline ($state) {
 }
 
 
-
 function rebootFarm() {
     foreach ($server in getRemoteServers) {
             
@@ -2673,6 +2673,7 @@ function AutoSPSourceBuilder() {
         $Location.Copyhere($fileZip.items())
     }
 
+
     Function Read-Log() {
         $log = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | Where-Object { $_.Name -like "opatchinstall*.log" } | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
         If ($null -eq $log) {
@@ -2748,6 +2749,7 @@ function AutoSPSourceBuilder() {
 
     # Only needed if proxy is enabled
     # $proxyCredentials = (Get-Credential -Message "Enter credentials for proxy server:" -UserName "$env:USERDOMAIN\$env:USERNAME")
+
 
     Write-Host -ForegroundColor Green " -- AutoSPSourceBuilder SharePoint Update Download/Integration Utility --"
     <##>
@@ -2926,6 +2928,7 @@ function AutoSPSourceBuilder() {
             if ($spCU[0].Url -like "*sp2*" -and $CumulativeUpdate -ne "August 2013" -and $CumulativeUpdate -ne "October 2013") {
                 # As we would probably want at least SP1 if we are installing a CU prior to the August 2013 CU for SP2010
                 $spServicePack = $spNode.ServicePacks.ServicePack | Where-Object { $_.Name -eq "SP1" }
+
             }
             elseif ($spCU[0].Url -like "*sp3*" -or $CumulativeUpdate -eq "August 2013" -or $updateSubBuild -gt 7140) {
                 # We probably want SP2 if we are installing the August 2013 CU for SP2010, or a version newer than 14.0.7140.5000
@@ -2938,6 +2941,7 @@ function AutoSPSourceBuilder() {
                 $spServicePack = $spNode.ServicePacks.ServicePack | Where-Object { $_.Name -eq "SP1" }
             }
         }
+
         # Check if we are requesting the August 2014 CU, which sure enough, isn't cumulative and requires SP1 + July 2014 CU
         if ($CumulativeUpdate -eq "August 2014") {
             Write-Host " - The $CumulativeUpdate CU requires the July 2014 CU to be present first; will now attempt to integrate both."
@@ -3502,6 +3506,7 @@ function AutoSPSourceBuilder() {
     Start-Sleep -Seconds 3
     Invoke-Item -Path $Destination
 
+
     WriteLine
     $Host.UI.RawUI.WindowTitle = $oldTitle
     #Pause "exit"
@@ -3509,6 +3514,7 @@ function AutoSPSourceBuilder() {
     Write-Output "$UpdateLocation\$spServicePackSubfolder"
     Return "$UpdateLocation\$spServicePackSubfolder"
 }
+
 
 # function distribute($servers, $jobs) {
 function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.Automation.PSCredential]$credentials = (GetFarmAccountCredentials)) {
@@ -3592,4 +3598,7 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.A
 
 }
 
+
 Main
+
+
