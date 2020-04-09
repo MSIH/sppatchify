@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 	SharePoint Central Admin - View active services across entire farm. No more select machine drop down dance!
 .DESCRIPTION
@@ -2753,7 +2753,7 @@ function AutoSPSourceBuilder() {
 
     Write-Host -ForegroundColor Green " -- AutoSPSourceBuilder SharePoint Update Download/Integration Utility --"
     <##>
-    $UseExistingLocalXML = $true
+    #$UseExistingLocalXML = $true
     if ($UseExistingLocalXML) {
         Write-Warning "'UseExistingLocalXML' specified; skipping download of AutoSPSourceBuilder.xml, and attempting to use local copy at '$dp0\AutoSPSourceBuilder.xml'."
         Write-Warning "This could mean you won't have the latest updates in your local copy."
