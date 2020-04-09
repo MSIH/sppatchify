@@ -547,7 +547,7 @@ function RunAndInstallCU($mainArgs) {
 
     # Remove MSPLOG
     Write-Host "===== Remove MSPLOG on ===== $(Get-Date)" -Fore "Yellow"
-    LoopRemoteCmd "Remove MSPLOG on " "Remove-Item '$logfolder\msp\*MSPLOG*' -Confirm:`$false -ErrorAction SilentlyContinue" -isJob $true
+    LoopRemoteCmd "Remove MSPLOG on " "Remove-Item '$logfolder\msp\*' -Confirm:`$false -ErrorAction SilentlyContinue" -isJob $true
 
     # Remove MSPLOG
     Write-Host "===== Unblock EXE on ===== $(Get-Date)" -Fore "Yellow"
@@ -2024,7 +2024,7 @@ function GetMonthInt($name) {
 }
 function PatchRemoval() {
     # Remove patch media
-    $files = Get-ChildItem "$root\media\*.exe" -Recurse -ErrorAction SilentlyContinue #| Out-Null
+    $files = Get-ChildItem "$root\media\*" -Recurse -ErrorAction SilentlyContinue #| Out-Null
     $files | Format-Table -AutoSize
     $files | Remove-Item -Confirm:$false -Force
 }
