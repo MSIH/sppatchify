@@ -336,7 +336,7 @@ function Main() {
         # CopyMedia "Copy"    
         # PauseSharePointSearch
         RunAndInstallCU
-        VerifyCUInstalledOnAllServers         
+              
         #RunConfigWizard 
         #StartSharePointSearch
         #DisplayCA        
@@ -356,6 +356,8 @@ function Main() {
         # uses CredSSP remoting    
         #RunConfigWizard
         RunPSconfig
+        VerifyCUInstalledOnAllServers
+        DisplayCA
     } 
 
     if ($MountContentDatabase) {  
@@ -657,11 +659,17 @@ function RunAndInstallCU($mainArgs) {
                     Restart-Computer -ComputerName $addr -Force
                 }
             }        
-            #LocalReboot RunConfigWizard  
-            $rebootArgs = "-RunConfigWizard", "-AfterReboot"
+            #LocalReboot RunConfigWizard 
+            <# 
+            $rebootArgs = "-RunConfigWizard"
             $taskName = "SPP_RunPSconfigAfterReboot"
             $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
             $params = "-ExecutionPolicy Bypass -File '$root\sppatchify.ps1' $rebootArgs"
+            #>
+
+            $taskName = "SPP_RunPSconfigAfterReboot"
+            $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
+            $params = "-ExecutionPolicy Bypass -File ""$root\sppatchify.ps1"" -RunConfigWizard"
 
             $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
             if ($found) {
