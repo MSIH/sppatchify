@@ -1,7 +1,7 @@
 # step 1 - change to SPPatchify Directory
-cd D:\DEPL\Software\sppatchify
-cd C:\DEPL\Software\sppatchify
-cd D:\Artifacts\Software\sppatchify
+cd C:\DEPL\Software\sppatchify #NICHD SP2016
+cd D:\DEPL\Software\sppatchify #NICHD SP2013/SP2019
+cd D:\Artifacts\Software\sppatchify #NIMHD
 
 # step 2 - Download Media
 .\sppatchify.ps1 -downloadMedia -downloadVersion 2019
