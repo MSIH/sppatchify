@@ -2798,9 +2798,10 @@ function AutoSPSourceBuilder() {
     }
     $Destination = $Destination.TrimEnd("\")
     # Ensure the Destination has the year at the end of the path, in case we forgot to type it in when/if prompted
-    if (!($Destination -like "*$spYear")) {
+    <#if (!($Destination -like "*$spYear")) {
         $Destination = $Destination + "\" + $spYear
     }
+    #>
     Write-Verbose -Message "Destination is `"$Destination`""
     if ([string]::IsNullOrEmpty($UpdateLocation)) {
         $UpdateLocation = $Destination + "\Updates"
@@ -3446,7 +3447,7 @@ function AutoSPSourceBuilder() {
     }
 
     #endregion
-    $Destination = 
+    #$Destination = $UpdateLocation
     #region Wrap Up
     WriteLine
     if (!([string]::IsNullOrEmpty($SourceLocation))) {
