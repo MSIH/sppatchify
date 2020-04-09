@@ -719,10 +719,12 @@ function Sendmail($from = "SharePointPatching@nih.gov", $to = "ContentDeployment
 function RunPSconfig() {
     $taskName = "SPP_RunPSconfigAfterReboot"
     Write-Host " Remove Task after reboot  ===== $(Get-Date)" -Fore "Yellow"
+    <#
     $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
     if ($found) {
         $found | Unregister-ScheduledTask -Confirm:$false 
     }
+    #>
 
     Write-Host " RunPSconfig ===== $(Get-Date)" -Fore "Yellow"
        
