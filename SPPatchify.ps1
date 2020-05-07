@@ -717,6 +717,9 @@ function Sendmail($from = "SharePointPatching@nih.gov", $to = "ContentDeployment
 
 
 function RunPSconfig() {
+    Write-Host " Waiting for Servers to reboot  ===== $(Get-Date)" -Fore "Yellow"
+    WaitReboot
+    
     $taskName = "SPP_RunPSconfigAfterReboot"
     Write-Host " Remove Task after reboot  ===== $(Get-Date)" -Fore "Yellow"
    
@@ -977,7 +980,7 @@ function WaitEXE($patchName) {
 }
 
 function WaitReboot() {
-    # NotUsed at this time
+    
     Write-Host "`n===== WaitReboot ===== $(Get-Date)" -Fore "Yellow"
 	
     # Wait for farm peer machines to reboot
@@ -1011,6 +1014,7 @@ function WaitReboot() {
             while (!$remote)
         }
     }
+     Write-Host "`n===== All server online ===== $(Get-Date)" -Fore "Yellow"
 	
     # Clean up
     Get-PSSession | Remove-PSSession -Confirm:$false
