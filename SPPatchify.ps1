@@ -717,8 +717,9 @@ function Sendmail($from = "SharePointPatching@nih.gov", $to = "ContentDeployment
 
 
 function RunPSconfig() {
-    Write-Host " Waiting for Servers to reboot  ===== $(Get-Date)" -Fore "Yellow"
-    WaitReboot
+    # not needed. will start with Central Admin server and will run for a while. Should be long enogh for other servers to start.
+    #Write-Host " Waiting for Servers to reboot  ===== $(Get-Date)" -Fore "Yellow"
+    #WaitReboot
     
     $taskName = "SPP_RunPSconfigAfterReboot"
     Write-Host " Remove Task after reboot  ===== $(Get-Date)" -Fore "Yellow"
