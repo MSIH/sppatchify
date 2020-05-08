@@ -139,6 +139,10 @@ function Main() {
 
     $mainArgs = $args
 
+    if (-not $mainArgs) {
+        return
+    }
+
     # what does this do
     If (!(Test-Path -Path $root -PathType Container)) {
         $remoteRoot = MakeRemote $root
@@ -329,17 +333,8 @@ function Main() {
 
 
     # Run CU, wait for servers to reboot, verify installed on all servers
-    if ($RunAndInstallCU) {   
-        # create scheduled task to run CU
-        # watch and update web page
-        # uses CredSSP remoting
-        # CopyMedia "Copy"    
-        # PauseSharePointSearch
+    if ($RunAndInstallCU) {  
         RunAndInstallCU
-        VerifyCUInstalledOnAllServers         
-        #RunConfigWizard 
-        #StartSharePointSearch
-        #DisplayCA        
     } 
 
 
@@ -349,12 +344,9 @@ function Main() {
         DismountContentDatabase $needsUpdateOnly
     } 
 
-
-
     if ($RunConfigWizard) {   
         # Run PSconfigure on all servers
         # uses CredSSP remoting    
-        #RunConfigWizard
         RunPSconfig
     } 
 
@@ -374,7 +366,7 @@ function Main() {
 
         RunAndInstallCU($mainArgs)        
         VerifyCUInstalledOnAllServers  
-        RunConfigWizard
+        RunPSconfig
         StartSharePointSearch
         DisplayCA
     }
@@ -386,7 +378,7 @@ function Main() {
         RunAndInstallCU($mainArgs)   
         VerifyCUInstalledOnAllServers 
         DismountContentDatabase 
-        RunConfigWizard
+        RunPSconfig
         MountContentDatabase 
         StartSharePointSearch
         DisplayCA
@@ -405,7 +397,7 @@ function Main() {
         RunAndInstallCU($mainArgs)           
         VerifyCUInstalledOnAllServers 
         DismountContentDatabase #Advanced
-        RunConfigWizard
+        RunPSconfig
         MountContentDatabase #Advanced
         StartSharePointRelatedServices #Complete
         UpgradeContent
@@ -677,8 +669,7 @@ function RunAndInstallCU($mainArgs) {
             # Create SCHTASK                
             Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
             $password = (GetFarmAccountPassword)
-            Register-ScheduledTask -InputObject  $task -User $user -Password $password -TaskName $taskName 
-            start-sleep 3
+            Register-ScheduledTask -InputObject  $task -User $user -Password $password -TaskName $taskName           
 
             Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
             Stop-Transcript
@@ -741,8 +732,7 @@ function RunPSconfig() {
             Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
             $password = (GetFarmAccountPassword)
             Register-ScheduledTask -InputObject  $task  -User $user -Password $password -TaskName $taskName 
-            #Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -User $user -Password $password
-            start-sleep 3
+            
             # Event log START                
             Start-ScheduledTask -TaskName $taskName 
             Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
@@ -760,12 +750,11 @@ function RunPSconfig() {
             $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -CimSession $addr
             $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
             $task = New-ScheduledTask -Action $a -Principal $p -Description "Run PSconfig created by SPPatchify Tool"  
+            
             # Create SCHTASK
             Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
-            $password = (GetFarmAccountPassword)
-      
+            $password = (GetFarmAccountPassword)      
             Register-ScheduledTask -InputObject $task -TaskName $taskName -CimSession $addr -User $user -Password $password 
-            start-sleep 3
 
             # Event log START            
             Start-ScheduledTask -TaskName $taskName -CimSession $addr
@@ -781,7 +770,7 @@ function RunPSconfig() {
             }
 
             Write-Host "." -NoNewLine
-            Start-Sleep 60
+            Start-Sleep 600
         }  
         while ($taskStatus)
     }  
@@ -828,8 +817,7 @@ function CreateScheduleTask($addr, $cmd, $params, $taskName, $user, $password, $
         Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green            
         Register-ScheduledTask -InputObject  $task -User $user -Password $password -TaskName $taskName 
             
-        # Start SCHTASK 
-        start-sleep 3                           
+        # Start SCHTASK                               
         Start-ScheduledTask -TaskName $taskName 
         Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
     }    
@@ -850,8 +838,7 @@ function CreateScheduleTask($addr, $cmd, $params, $taskName, $user, $password, $
         Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green                  
         Register-ScheduledTask -InputObject $task -TaskName $taskName -CimSession $addr -User $user -Password $password 
             
-        # Start SCHTASK 
-        start-sleep 3           
+        # Start SCHTASK         
         Start-ScheduledTask -TaskName $taskName -CimSession $addr
         Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
     }
@@ -900,7 +887,7 @@ function WaitEXE($patchName) {
                 # Monitor EXE process
                 $proc = Get-Process -Name $patchName -Computer $addr -ErrorAction SilentlyContinue
                 Write-Host "." -NoNewLine
-                Start-Sleep 10
+                Start-Sleep 60
 
                 # Priority (High) from https://gallery.technet.microsoft.com/scriptcenter/Set-the-process-priority-9826a55f
                 $cmd = "`$proc = Get-Process -Name ""$patchName"" -ErrorAction SilentlyContinue; if (`$proc) { if (`$proc.PriorityClass.ToString() -ne ""High"") { `$proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::HIGH } }"
@@ -921,7 +908,6 @@ function WaitEXE($patchName) {
             Write-Host $progress
 			
             # Check Schtask Exit Code
-            Start-Sleep 3
             if ($addr -eq $env:computername) { 
                 $task = Get-ScheduledTask -TaskName $taskName 
             }
@@ -1022,7 +1008,6 @@ function LocalReboot($parmater) {
         $th = [Math]::Round(((Get-Date) - $start).TotalHours, 2)
         Write-Host "Duration Total Hours: $th" -Fore "Yellow"
         Stop-Transcript
-        Start-Sleep 5
         Restart-Computer -Force
         Exit
     }
@@ -1112,7 +1097,6 @@ function LoopRemotePatch($msg, $cmd, $params) {
         $remote = GetRemotePSSession $addr (GetFarmAccountCredentials)        
 
         # Invoke
-        Start-Sleep 3
         foreach ($s in $sb) {
             Write-Host $s.ToString()
             if ($remote) {
@@ -1214,7 +1198,6 @@ function LoopRemoteCmd($msg, $cmd, $isJob = $false) {
         # Remote Posh
         Write-Host ">> invoke on $addr $(Get-Date)" -Fore "Green"
         Write-Host "mergeSb $mergeSb" -Fore "Cyan"
-        Start-Sleep 1
         InvokeCommand -ScriptBlock $mergeSb -server $addr -isJob $isJob    
         Write-Host "<< complete on $addr $(Get-Date)" -Fore "Green"
     }
@@ -1379,36 +1362,6 @@ function StartSharePointSearch() {
     Write-Host "Started search crawler ... ===== $(Get-Date)" -Fore "Yellow"     
 }
 
-function RunConfigWizard() {
-    Write-Host "===== RunConfigWizard =====" -Fore Yellow
-
-    # Shared
-    $shared = {
-        Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
-        $ver = (Get-SPFarm).BuildVersion.Major
-        $psconfig = "C:\Program Files\Common Files\microsoft shared\Web Server Extensions\$ver\BIN\psconfig.exe"
-    }
-
-    # Save B2B shortcut
-    $b2b = {
-        ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-        $file = $psconfig.replace("psconfig.exe", "psconfigb2b.cmd")
-        if (!(Test-Path $file)) {
-            "psconfig.exe -cmd upgrade -inplace b2b -force" | Out-File $file -Force
-        }
-    }
-    LoopRemoteCmd "Save B2B shortcut on " @($shared, $b2b)
-
-    # Run Config Wizard - https://blogs.technet.microsoft.com/stefan_gossner/2015/08/20/why-i-prefer-psconfigui-exe-over-psconfig-exe/
-    $wiz = { ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-        Start-Process 'iisreset.exe' -ArgumentList '/stop' -Wait -PassThru -NoNewWindow | Out-Null
-        try {           
-            & "$psconfig" -cmd "upgrade" -inplace "b2b" -wait -cmd "applicationcontent" -install -cmd "installfeatures" -cmd "secureresources" -cmd "services" -install 
-        }
-        catch { "An error occurred." }
-    }
-    LoopRemoteCmd "Run Config Wizard on " @($shared, $wiz)
-}
 function DismountContentDatabase($needUpgradeOnly = $False) {
     #ChangeContent $false
  
@@ -2050,7 +2003,7 @@ function PatchMenu() {
             }
         }
         while ([string]::IsNullOrEmpty($spYear)) {
-            Start-Sleep -Seconds 1
+
             $spYear = ($spAvailableVersionNumbers | Out-GridView -Title "Please select the version of SharePoint to download updates for:" -PassThru).Name
             if ($spYear.Count -gt 1) {
                 Write-Warning "Please only select ONE version. Re-prompting..."
@@ -2322,7 +2275,6 @@ function WaitSPTimer($addr, $service, $change, $state) {
 
     do {
         # Display
-        Start-Sleep 3
         Write-Host -Foregroundcolor DarkGray -NoNewLine "."
 
         # Get Service
@@ -2470,10 +2422,9 @@ function rebootFarm() {
     foreach ($server in getRemoteServers) {
             
         Write-Host "Reboot $($server)" -Fore Yellow
-        Restart-Computer -ComputerName $server.Name -Force
-        Start-Sleep 1
-            
+        Restart-Computer -ComputerName $server.Name -Force            
     }
+    Stop-Transcript
     Restart-Computer -Force
 }
 
@@ -3574,7 +3525,7 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.A
                     # No active job was found for the server, so add new job
                     # $job = Invoke-Command -ScriptBlock $data[0] -Session $session -AsJob 
                     $job = InvokeCommand -server $server -ScriptBlock $data[0] -isJob $true
-                    start-Sleep 3
+
                     <#{
                         param($data, $hostname)
                         if ((Get-PSSnapin | Where-Object { $_.Name -eq "Microsoft.SharePoint.PowerShell" }) -eq $null) { 
@@ -3593,7 +3544,7 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.A
         # Just a manual check of $jobs
         Write-Output $jobs
         # Wait a bit before checking again
-        Start-Sleep -Seconds 10
+        Start-Sleep -Seconds 60
     } while ($data.Count -gt 0)
 
 }
