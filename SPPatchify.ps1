@@ -1153,7 +1153,7 @@ function GetRemotePSSession([string]$server, [System.Management.Automation.PSCre
                     $session = New-PSSession -ComputerName $server -Port $remoteSessionPort -UseSSL
                 }
                 else {
-                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort -UseSSL 
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Kerberos  -Port $remoteSessionPort -UseSSL 
                 }
 
             }
@@ -1162,7 +1162,7 @@ function GetRemotePSSession([string]$server, [System.Management.Automation.PSCre
                     $session = New-PSSession -ComputerName $server -Port $remoteSessionPort 
                 }
                 else {
-                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort 
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Kerberos  -Port $remoteSessionPort 
                 }
             }
             elseif ($remoteSessionSSL) {
@@ -1171,7 +1171,7 @@ function GetRemotePSSession([string]$server, [System.Management.Automation.PSCre
                     $session = New-PSSession -ComputerName $server  -UseSSL
                 }
                 else {
-                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -UseSSL 
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Kerberos  -UseSSL 
                 }        
             }
             else {
@@ -1179,7 +1179,7 @@ function GetRemotePSSession([string]$server, [System.Management.Automation.PSCre
                     $session = New-PSSession -ComputerName $server 
                 }
                 else {
-                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp 
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Kerberos  
                 }
             }
         }
