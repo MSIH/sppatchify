@@ -1,20 +1,33 @@
-cd D:\DEPL\Software\sppatchify
-cd C:\DEPL\Software\sppatchify
-cd D:\Artifacts\Software\sppatchify
+# step 1 - change to SPPatchify Directory
+cd C:\DEPL\Software\sppatchify #NICHD SP2016
+cd D:\DEPL\Software\sppatchify #NICHD SP2013/SP2019
+cd D:\Artifacts\Software\sppatchify #NIMHD
+
+# step 2 - Download Media
 .\sppatchify.ps1 -downloadMedia -downloadVersion 2019
 .\sppatchify.ps1 -downloadMedia -downloadVersion 2016
 .\sppatchify.ps1 -downloadMedia -downloadVersion 2013
-.\sppatchify.ps1 -Standard #install CU, run psconfig, open CA
 
+# step 3 - Copy Media to Servers
 .\sppatchify.ps1 -CopyMedia
-.\sppatchify.ps1 -PauseSharePointSearch
-.\sppatchify.ps1 -RunAndInstallCU # run parellel
-.\sppatchify.ps1 -DismountContentDatabase
-.\sppatchify.ps1 -RunConfigWizard
-.\sppatchify.ps1 -MountContentDatabase #mount and update
-.\sppatchify.ps1 -StartSharePointSearch
-.\sppatchify.ps1 -RebootServer
 
+# step 4 - Stop Search (Option for SP2016/2019)
+# We are no longer doing this for SP2016 and SP2019, as install not taking 5 hours
+# some say this speeds up install of the CU# 
+#.\sppatchify.ps1 -PauseSharePointSearch
+
+# step 5 - Install CU and Run PSConfig afrer automatic reboot
+.\sppatchify.ps1 -RunAndInstallCU # run parellel
+
+
+# other One Off Commands
+
+.\sppatchify.ps1 -RunConfigWizard
+.\sppatchify.ps1 -StartSharePointSearch
+.\sppatchify.ps1 -ClearCacheIni
+.\sppatchify.ps1 -DismountContentDatabase
+.\sppatchify.ps1 -MountContentDatabase #mount and update
+.\sppatchify.ps1 -RebootServer
 .\sppatchify.ps1 -DismountContentDatabase
 .\sppatchify.ps1 -MountContentDatabase
 .\sppatchify.ps1 -showVersionExit
@@ -22,9 +35,9 @@ cd D:\Artifacts\Software\sppatchify
 .\sppatchify.ps1 -productlocalExit
 .\sppatchify.ps1 -EnablePSRemoting
 .\sppatchify.ps1 -IISStart
-.\sppatchify.ps1 -ClearCacheIni
-.\sppatchify.ps1 -RunConfigWizard
-.\sppatchify.ps1 -Advanced #dismount and mount
+
+
+
 
 #future
 .\sppatchify.ps1 -DismountContentDatabase -UpgradeNeeded #these block psconfig

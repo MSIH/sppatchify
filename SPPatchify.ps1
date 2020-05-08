@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 	SharePoint Central Admin - View active services across entire farm. No more select machine drop down dance!
 .DESCRIPTION
@@ -348,6 +348,8 @@ function Main() {
         # Run PSconfigure on all servers
         # uses CredSSP remoting    
         RunPSconfig
+        VerifyCUInstalledOnAllServers
+        DisplayCA
     } 
 
     if ($MountContentDatabase) {  
@@ -537,7 +539,7 @@ function RunAndInstallCU($mainArgs) {
 
     # Remove MSPLOG
     Write-Host "===== Remove MSPLOG on ===== $(Get-Date)" -Fore "Yellow"
-    LoopRemoteCmd "Remove MSPLOG on " "Remove-Item '$logfolder\msp\*MSPLOG*' -Confirm:`$false -ErrorAction SilentlyContinue" -isJob $true
+    LoopRemoteCmd "Remove MSPLOG on " "Remove-Item '$logfolder\msp\*' -Confirm:`$false -ErrorAction SilentlyContinue" -isJob $true
 
     # Remove MSPLOG
     Write-Host "===== Unblock EXE on ===== $(Get-Date)" -Fore "Yellow"
@@ -649,11 +651,17 @@ function RunAndInstallCU($mainArgs) {
                     Restart-Computer -ComputerName $addr -Force
                 }
             }        
-            #LocalReboot RunConfigWizard  
-            $rebootArgs = "-RunConfigWizard", "-AfterReboot"
+            #LocalReboot RunConfigWizard 
+            <# 
+            $rebootArgs = "-RunConfigWizard"
             $taskName = "SPP_RunPSconfigAfterReboot"
             $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
             $params = "-ExecutionPolicy Bypass -File '$root\sppatchify.ps1' $rebootArgs"
+            #>
+
+            $taskName = "SPP_RunPSconfigAfterReboot"
+            $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
+            $params = "-ExecutionPolicy Bypass -File ""$root\sppatchify.ps1"" -RunConfigWizard"
 
             $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
             if ($found) {
@@ -700,12 +708,18 @@ function Sendmail($from = "SharePointPatching@nih.gov", $to = "ContentDeployment
 
 
 function RunPSconfig() {
+    # not needed. will start with Central Admin server and will run for a while. Should be long enogh for other servers to start.
+    #Write-Host " Waiting for Servers to reboot  ===== $(Get-Date)" -Fore "Yellow"
+    #WaitReboot
+    
     $taskName = "SPP_RunPSconfigAfterReboot"
     Write-Host " Remove Task after reboot  ===== $(Get-Date)" -Fore "Yellow"
+   
     $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
     if ($found) {
         $found | Unregister-ScheduledTask -Confirm:$false 
     }
+ 
 
     Write-Host " RunPSconfig ===== $(Get-Date)" -Fore "Yellow"
        
@@ -953,7 +967,7 @@ function WaitEXE($patchName) {
 }
 
 function WaitReboot() {
-    # NotUsed at this time
+    
     Write-Host "`n===== WaitReboot ===== $(Get-Date)" -Fore "Yellow"
 	
     # Wait for farm peer machines to reboot
@@ -987,6 +1001,7 @@ function WaitReboot() {
             while (!$remote)
         }
     }
+    Write-Host "`n===== All server online ===== $(Get-Date)" -Fore "Yellow"
 	
     # Clean up
     Get-PSSession | Remove-PSSession -Confirm:$false
@@ -1122,7 +1137,7 @@ function GetRemotePSSession([string]$server, [System.Management.Automation.PSCre
                     $session = New-PSSession -ComputerName $server -Port $remoteSessionPort -UseSSL
                 }
                 else {
-                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort -UseSSL 
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Kerberos  -Port $remoteSessionPort -UseSSL 
                 }
 
             }
@@ -1131,7 +1146,7 @@ function GetRemotePSSession([string]$server, [System.Management.Automation.PSCre
                     $session = New-PSSession -ComputerName $server -Port $remoteSessionPort 
                 }
                 else {
-                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -Port $remoteSessionPort 
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Kerberos  -Port $remoteSessionPort 
                 }
             }
             elseif ($remoteSessionSSL) {
@@ -1140,7 +1155,7 @@ function GetRemotePSSession([string]$server, [System.Management.Automation.PSCre
                     $session = New-PSSession -ComputerName $server  -UseSSL
                 }
                 else {
-                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp -UseSSL 
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Kerberos  -UseSSL 
                 }        
             }
             else {
@@ -1148,7 +1163,7 @@ function GetRemotePSSession([string]$server, [System.Management.Automation.PSCre
                     $session = New-PSSession -ComputerName $server 
                 }
                 else {
-                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Credssp 
+                    $session = New-PSSession -ComputerName $server -Credential $credentials -Authentication Kerberos  
                 }
             }
         }
@@ -1967,7 +1982,7 @@ function GetMonthInt($name) {
 }
 function PatchRemoval() {
     # Remove patch media
-    $files = Get-ChildItem "$root\media\*.exe" -Recurse -ErrorAction SilentlyContinue #| Out-Null
+    $files = Get-ChildItem "$root\media\*" -Recurse -ErrorAction SilentlyContinue #| Out-Null
     $files | Format-Table -AutoSize
     $files | Remove-Item -Confirm:$false -Force
 }
@@ -2014,7 +2029,7 @@ function PatchMenu() {
     }
     
     Write-Host " - SharePoint $sharePointVersion selected."
-    $Destination = AutoSPSourceBuilder -UpdateLocation "$root\media" -SharePointVersion $sharePointVersion -Destination "$root\media"
+    AutoSPSourceBuilder -UpdateLocation "$root\media" -SharePointVersion $sharePointVersion -Destination "$root\media"
     #$Destination 
     #Get-ChildItem -Path $Destination -Recurse -File $Destination | Copy-Item -Destination $root\media 
     #Get-ChildItem -Path $root\media -Recurse -Directory | Remove-Item 
@@ -2704,7 +2719,7 @@ function AutoSPSourceBuilder() {
 
     Write-Host -ForegroundColor Green " -- AutoSPSourceBuilder SharePoint Update Download/Integration Utility --"
     <##>
-    $UseExistingLocalXML = $true
+    #$UseExistingLocalXML = $true
     if ($UseExistingLocalXML) {
         Write-Warning "'UseExistingLocalXML' specified; skipping download of AutoSPSourceBuilder.xml, and attempting to use local copy at '$dp0\AutoSPSourceBuilder.xml'."
         Write-Warning "This could mean you won't have the latest updates in your local copy."
@@ -2739,9 +2754,10 @@ function AutoSPSourceBuilder() {
     }
     $Destination = $Destination.TrimEnd("\")
     # Ensure the Destination has the year at the end of the path, in case we forgot to type it in when/if prompted
-    if (!($Destination -like "*$spYear")) {
+    <#if (!($Destination -like "*$spYear")) {
         $Destination = $Destination + "\" + $spYear
     }
+    #>
     Write-Verbose -Message "Destination is `"$Destination`""
     if ([string]::IsNullOrEmpty($UpdateLocation)) {
         $UpdateLocation = $Destination + "\Updates"
@@ -3387,7 +3403,7 @@ function AutoSPSourceBuilder() {
     }
 
     #endregion
-    $Destination = 
+    #$Destination = $UpdateLocation
     #region Wrap Up
     WriteLine
     if (!([string]::IsNullOrEmpty($SourceLocation))) {
