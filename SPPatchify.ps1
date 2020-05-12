@@ -645,50 +645,41 @@ function RunAndInstallCU($mainArgs) {
             }
         }
 	
-        # SharePoint 2016 Force Reboot
-        $ver = (Get-SPFarm).BuildVersion.Major
-        if ($ver -eq 16) {
-            Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
-            foreach ($server in getRemoteServers) {
-                $addr = $server.Address
-                if ($addr -ne $env:computername) {
-                    Write-Host "Reboot $($addr)" -Fore Yellow
-                    Restart-Computer -ComputerName $addr -Force
-                }
-            }        
-            #LocalReboot RunConfigWizard 
-            <# 
-            $rebootArgs = "-RunConfigWizard"
-            $taskName = "SPP_RunPSconfigAfterReboot"
-            $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
-            $params = "-ExecutionPolicy Bypass -File '$root\sppatchify.ps1' $rebootArgs"
-            #>
-
-            $taskName = "SPP_RunPSconfigAfterReboot"
-            $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
-            $params = "-ExecutionPolicy Bypass -File ""$root\sppatchify.ps1"" -RunConfigWizard"
-
-            $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
-            if ($found) {
-                $found | Unregister-ScheduledTask -Confirm:$false 
+        #  Force Reboot      
+        
+        Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
+        foreach ($server in getRemoteServers) {
+            $addr = $server.Address
+            if ($addr -ne $env:computername) {
+                Write-Host "Reboot $($addr)" -Fore Yellow
+                Restart-Computer -ComputerName $addr -Force
             }
+        }       
+       
+        $taskName = "SPP_RunPSconfigAfterReboot"
+        $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
+        $params = "-ExecutionPolicy Bypass -File ""$root\sppatchify.ps1"" -RunConfigWizard"
 
-            # New SCHTASK parameters
-            $user = GetFarmAccount 
-            $a = New-ScheduledTaskAction -Execute $cmd -Argument $params 
-            $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
-            $t = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 2)
-            $task = New-ScheduledTask -Action $a -Principal $p -Trigger $t -Description "Run SPPatchify $rebootArgs after reboot" 
-            # Create SCHTASK                
-            Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
-            $password = (GetFarmAccountPassword)
-            Register-ScheduledTask -InputObject  $task -User $user -Password $password -TaskName $taskName 
-            start-sleep 3
+        $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+        if ($found) {
+            $found | Unregister-ScheduledTask -Confirm:$false 
+        }
 
-            Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
-            Stop-Transcript
-            Restart-Computer  -Force
-        } 
+        # New SCHTASK parameters
+        $user = GetFarmAccount 
+        $a = New-ScheduledTaskAction -Execute $cmd -Argument $params 
+        $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+        $t = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Minutes 2)
+        $task = New-ScheduledTask -Action $a -Principal $p -Trigger $t -Description "Run SPPatchify $rebootArgs after reboot" 
+        # Create SCHTASK                
+        Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
+        $password = (GetFarmAccountPassword)
+        Register-ScheduledTask -InputObject  $task -User $user -Password $password -TaskName $taskName 
+        start-sleep 3
+
+        Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
+        Stop-Transcript
+        Restart-Computer  -Force        
     }
     else {
         write-host "No Install Files Found. Plaese run .\sppatchify.ps1 -downloadMedia"
