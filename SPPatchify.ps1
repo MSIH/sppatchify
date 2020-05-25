@@ -415,6 +415,8 @@ function Main() {
         DisplayCA
     }  
 
+    Sendmail -
+
     #remove all scheduled tasks
     $taskName = "SSP_*"
     foreach ($server in getFarmServers) {       
@@ -689,7 +691,7 @@ function RunAndInstallCU($mainArgs) {
 
 }
 
-function Sendmail($from = "SharePointPatching@nih.gov", $to = "ContentDeploymentMonitoring@woodbournesolutions.com", $subject = "PS Patchify Notice", $body) {
+function Sendmail($from = "", $to = "", $subject = "PS Patchify Notice", $body, $smtphost) {
 
     $MailMessage = New-Object system.net.mail.mailmessage
     $MailMessage.From = $from
@@ -698,7 +700,7 @@ function Sendmail($from = "SharePointPatching@nih.gov", $to = "ContentDeployment
     $MailMessage.Body = $body
     $MailMessage.IsBodyHtml = $true
     $smtp = New-Object Net.Mail.SmtpClient
-    $smtp.Host = "mailfwd.nih.gov"
+    $smtp.Host = $smtphost
     $smtp.Port = 25
     $smtp.Send($MailMessage)
 }
