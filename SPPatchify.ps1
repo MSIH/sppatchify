@@ -196,12 +196,12 @@ function Main() {
 
     if ($EnablePSRemotingOnly) {  
         # Enable CredSSP remoting      
-        EnablePSRemoting
+        # EnablePSRemoting # no longer used
         Stop-Transcript; Exit
     }
 
     # Enable CredSSP remoting      
-    EnablePSRemoting
+    # EnablePSRemoting # no longer used
 
     # Verify Remote PowerShell
     if (-not (VerifyRemotePS)) {
@@ -356,6 +356,7 @@ function Main() {
         # uses CredSSP remoting    
         #RunConfigWizard
         RunPSconfig
+        StartSharePointSearch
         VerifyCUInstalledOnAllServers
         DisplayCA
     } 
@@ -414,8 +415,6 @@ function Main() {
         StartSharePointSearch
         DisplayCA
     }  
-
-    Sendmail -
 
     #remove all scheduled tasks
     $taskName = "SSP_*"

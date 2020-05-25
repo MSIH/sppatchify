@@ -13,8 +13,9 @@ cd D:\Artifacts\Software\sppatchify #NIMHD
 
 # step 4 - Stop Search (Option for SP2016/2019)
 # We are no longer doing this for SP2016 and SP2019, as install not taking 5 hours
-# some say this speeds up install of the CU# 
-#.\sppatchify.ps1 -PauseSharePointSearch
+# some say this speeds up install of the CU#
+# .\sppatchify.ps1 -rebootFarmOnly 
+# .\sppatchify.ps1 -PauseSharePointSearch
 
 # step 5 - Install CU and Run PSConfig afrer automatic reboot
 .\sppatchify.ps1 -RunAndInstallCU # run parellel
@@ -27,7 +28,7 @@ cd D:\Artifacts\Software\sppatchify #NIMHD
 .\sppatchify.ps1 -ClearCacheIni
 .\sppatchify.ps1 -DismountContentDatabase
 .\sppatchify.ps1 -MountContentDatabase #mount and update
-.\sppatchify.ps1 -RebootServer
+.\sppatchify.ps1 -rebootFarmOnly
 .\sppatchify.ps1 -DismountContentDatabase
 .\sppatchify.ps1 -MountContentDatabase
 .\sppatchify.ps1 -showVersionExit
