@@ -1,125 +1,122 @@
 ﻿<#
 .SYNOPSIS
-	SharePoint Central Admin - View active services across entire farm. No more select machine drop down dance!
+	Autoamtes the Download and Install of SharePoint CU and then PSconfig
 .DESCRIPTION
-	Apply CU patch to entire farm from one PowerShell console.
-    NOTE - must run local to a SharePoint server under account with farm admin rights.
-	Comments and suggestions always welcome!  spjeff@spjeff.com or @spjeff
+    Tool to download and copy SharePoint CU to all servers in Farm
+    Install CU to all servers in Farm in parrellel
+    Automatically reboots all servers in Farm
+    Automatically after reboot runs PSconfig sequentialy on all servers in Farm
+
+    Download patches is based on AutoSPSourceBuilder https://github.com/brianlala/AutoSPSourceBuilder
+    Install CU and run PSconfig is based on sppatchify http://www.github.com/spjeff/sppatchify        
+	
 .NOTES
-	File Namespace	: SPPatchify.ps1
-	Author			: Jeff Jones - @spjeff
-	Version			: 0.144
-    Last Modified	: 10-04-2019
-    
-.LINK
-	Source Code
-	http://www.github.com/spjeff/sppatchify
+    Requires WinRM enabled with Kerberos authenication on all servers
 #>
 
 [CmdletBinding()]
 param (
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -d -downloadMediaOnly to execute Media Download only.  No farm changes.  Prep step for real patching later.')]
-    [Alias("d")]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -downloadMediaOnly to only download SharePoint CU.  No farm changes.')]  
     [switch]$downloadMediaOnly,
-    [string]$downloadVersion,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -rebootFarmOnly.')] 
-    [switch]$rebootFarmOnly,    
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -downloadVersion to specify SharePoint Version.  No farm changes.')] [string]$downloadVersion,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -StartSharePointSearchOnly.')] 
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -rebootFarmOnly.')] 
+    [switch]$rebootFarmOnly,  
+    
+    # send mail
+    [Parameter(Mandatory = $False, HelpMessage = 'Email From Address')] 
+    [switch]$from, 
+    [Parameter(Mandatory = $False, HelpMessage = 'Email To Address')] 
+    [switch]$to, 
+    [Parameter(Mandatory = $False, HelpMessage = 'Email Subject')] 
+    [switch]$subject, 
+    [Parameter(Mandatory = $False, HelpMessage = 'Email Body')] 
+    [switch]$body, 
+    [Parameter(Mandatory = $False, HelpMessage = 'SMTP Host')] 
+    [switch]$smtphost,  
+
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -StartSharePointSearchOnly.')] 
     [switch]$StartSharePointSearchOnly,
     
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -PauseSharePointSearchOnly.')] 
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -PauseSharePointSearchOnly.')] 
     [switch]$PauseSharePointSearchOnly,  
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -c -CopyMedia to copy \media\ across all peer machines.  No farm changes.  Prep step for real patching later.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -CopyMedia to copy SharePoint CU into the sppatchify\media\ folder on all Farm servers.  No farm changes.')]
     [switch]$CopyMedia,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -v -showVersionOnly to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
-
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -v -showVersionOnly to show farm version info.  READ ONLY, NO SYSTEM CHANGES.')]
     [switch]$showVersionOnly, 
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -phaseTwo to execute Phase Two after local reboot.')]
-    [switch]$phaseTwo,
-
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -phaseThree to execute Phase Three attach and upgrade content.')]
-    [switch]$phaseThree,
-	
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -remoteSessionPort to open PSSession (remoting) with custom port number.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -remoteSessionPort to open PSSession (remoting) with custom port number.')]
     [string]$remoteSessionPort,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -remoteSessionSSL to open PSSession (remoting) with SSL encryption.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -remoteSessionSSL to open PSSession (remoting) with SSL encryption.')]
     [switch]$remoteSessionSSL,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -test to open Remote PS Session and verify connectivity all farm members.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -test to open Remote PS Session and verify connectivity all farm members.')]
     [switch]$testRemotePSOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -targetServers to run for specific machines only.  Applicable to PhaseOne and PhaseTwo.')]
-    [string[]]$targetServers,
-
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -productlocalOnly to execute remote cmdlet [Get-SPProduct -Local] on all servers in farm, or target/wave servers only if given.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -productlocalOnly to execute remote cmdlet [Get-SPProduct -Local] on all servers in farm.')]
     [switch]$productlocalOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -mount to execute Mount-SPContentDatabase to load CSV and attach content databases to web applications.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -mount to execute Mount-SPContentDatabase to load CSV and attach content databases to web applications.')]
     [string]$mount,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -appOffline TRUE/FALSE to COPY app_offline.htm] file to all servers and all IIS websites (except Default Website).')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -appOffline TRUE/FALSE to COPY app_offline.htm] file to all servers and all IIS websites (except Default Website).')]
     [string]$appOffline,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -bypass to run with PACKAGE.BYPASS.DETECTION.CHECK=1')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -bypass to run with PACKAGE.BYPASS.DETECTION.CHECK=1')]
     [switch]$bypass, 
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -saveServiceInstanceOnly to snapshot CSV with current Service Instances running.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -saveServiceInstanceOnly to snapshot CSV with current Service Instances running.')]
     [switch]$saveServiceInstanceOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -reportContentDatabasesOnly to snapshot CSV with Content Databases.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -reportContentDatabasesOnly to snapshot CSV with Content Databases.')]
     [switch]$reportContentDatabasesOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -startSharePointRelatedServicesOnly to start sharepoint and iis services.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -startSharePointRelatedServicesOnly to start sharepoint and iis services.')]
     [switch]$startSharePointRelatedServicesOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -stopSharePointRelatedServicesOnly to stop sharepoint and iis services.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -stopSharePointRelatedServicesOnly to stop sharepoint and iis services.')]
     [switch]$stopSharePointRelatedServicesOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -EnablePSRemotingOnly to enable CredSSP.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -EnablePSRemotingOnly to enable CredSSP.')]
     [switch]$EnablePSRemotingOnly,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -ClearCacheIni to clear chache ini folder.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -ClearCacheIni to clear chache ini folder.')]
     [switch]$ClearCacheIni,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -StopSPDistributedCache to stop sharepoint and iis services.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -StopSPDistributedCache to stop sharepoint and iis services.')]
     [switch]$StopSPDistributedCache,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -IISStart to stop sharepoint and iis services.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -IISStart to stop sharepoint and iis services.')]
     [switch]$IISStart,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -RunAndInstallCU to stop sharepoint and iis services.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -RunAndInstallCU to install SharePoint CU on all Farm servers, then reboot, and run PSconfig on all servers.')]
     [switch]$RunAndInstallCU,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -DismountContentDatabase to stop sharepoint and iis services.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -DismountContentDatabase to dismount all content databases.')]
     [switch]$DismountContentDatabase,
     [bool] $needsUpdateOnly = $false,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -RunConfigWizard to stop sharepoint and iis services.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -RunConfigWizard to run PSconfig on all servers')]
     [switch]$RunConfigWizard,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -MountContentDatabase to stop sharepoint and iis services.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -MountContentDatabase to mount all content databases.')]
     [switch]$MountContentDatabase,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -UpgradeContent to stop sharepoint and iis services.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -UpgradeContent to upgrade all content databases')]
     [switch]$UpgradeContent,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -Standard download and copy CU, pause search, install CU, run psconfig and then start search.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -Standard download and copy CU, pause search, install CU, run psconfig and then start search.')]
     [switch]$Standard,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -Advanced download and copy CU, pause search, install CU, dismount content databases, run psconfig, mount content databases, and then start search.')]
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -Advanced download and copy CU, pause search, install CU, dismount content databases, run psconfig, mount content databases, and then start search.')]
     [switch]$Advanced,
 
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -Complete download and copy CU, clear ini cache, restart IIS,save status of services, pause search, install CU, dismount content databases, run psconfig, mount content databases, start services, and then start search.')]
-    [switch]$Complete,
-
-    [Parameter(Mandatory = $False, ValueFromPipeline = $false, HelpMessage = 'Use -AfterReboot to tell command starting after reboot.')]
-    [switch]$AfterReboot
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -Complete download and copy CU, clear ini cache, restart IIS,save status of services, pause search, install CU, dismount content databases, run psconfig, mount content databases, start services, and then start search.')]
+    [switch]$Complete
 )
 
 # Plugin
@@ -145,15 +142,7 @@ function Main() {
     }
 
     $remoteRoot = MakeRemote $root
-
-    # Local farm servers - note removed global variables
-    # $global:servers = Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
-    # List - Target servers
-    <#
-    if ($targetServers) {
-        $global:servers = Get-SPServer | Where-Object { $targetServers -contains $_.Name } | Sort-Object Address
-    }
-    #>    
+    
     
     #Create Local Log Folders
     If (!(Test-Path -Path $logFolder -PathType Container)) {
