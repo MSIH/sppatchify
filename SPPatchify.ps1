@@ -680,7 +680,7 @@ function RunAndInstallCU($mainArgs) {
 
         Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
         Stop-Transcript
-        Restart-Computer  -Force        
+        Restart-Computer -Force        
     }
     else {
         write-host "No Install Files Found. Plaese run .\sppatchify.ps1 -downloadMedia"
