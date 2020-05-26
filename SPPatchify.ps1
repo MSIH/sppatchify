@@ -245,7 +245,6 @@ function Main() {
     }
 
 
-
     <# Change Services
     if ($changeServices.ToUpper() -eq "TRUE") {
         changeServices $true
@@ -1035,25 +1034,8 @@ function CalcDuration() {
     $totalHours = [Math]::Round(((Get-Date) - $start).TotalHours, 2)
     Write-Host "Duration Hours: $totalHours" -Fore "Yellow"
     $c = (Get-SPContentDatabase).Count
-    Write-Host "Content Databases Online: $c"
-	
-    # Add both Phase one and two
-    $regHive = "HKCU:\Software"
-    $regKey = "SPPatchify"
-    if (!$phaseTwo) {
-        # Create Regkey
-        New-Item -Path $regHive -Name "$regKey" -ErrorAction SilentlyContinue | Out-Null
-        New-ItemProperty -Path "$regHive\$regKey" -Name "PhaseOneTotalHours" -Value $totalHours -ErrorAction SilentlyContinue | Out-Null
-    }
-    else {
-        # Read Regkey
-        $key = Get-ItemProperty -Path "$regHive\PhaseOneTotalHours" -ErrorAction SilentlyContinue
-        if ($key) {
-            $totalHours += [double]($key."PhaseOneTotalHours")
-        }
-        Write-Host "TOTAL Hours (Phase One and Two): $totalHours" -Fore "Yellow"
-        Remove-Item -Path "$regHive\$regKey" -ErrorAction SilentlyContinue | Out-Null
-    }
+    Write-Host "Content Databases Online: $c"	
+   
 }
 function FinalCleanUp() {
     # NotUsed at this time
