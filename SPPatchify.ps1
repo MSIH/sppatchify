@@ -429,11 +429,59 @@ function Main() {
     # remove all pssession
     Get-PSSession | Remove-PSSession -Confirm:$false
 
+    # send email notice
+    Sendmail -from $from -to $to -subject "SPP_CU Installed" -body (DisplayCA | ConvertTo-Html -Fragment ) -smtphost $smtphost
+
     # Calculate Duration and Run Cleanup    
     CalcDuration
   
     Write-Host "DONE ===$(Get-Date)"
     Stop-Transcript
+}
+
+function waitForScheduledTask($taskName, $servers, $waitInHours) {
+    write-host "$(Get-Date) - Remaining Servers: $($servers.count)" 
+    write-host $servers 
+    $minutes = 0
+    do {       
+        # loop thru severs still running scheduled task
+        foreach ($server in $servers) {   
+
+            $found = $null 
+            if ($server -eq $env:computername) { 
+                $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+            }
+            else {
+                $found = Get-ScheduledTask -TaskName $taskName -CimSession $server -ErrorAction SilentlyContinue
+            }
+
+            # check if remote scheduled task is back to ready start (completed)
+            if ($found.State -eq 'Ready') { 
+                if ($server -eq $env:computername) { 
+                    $found | Unregister-ScheduledTask -Confirm:$false 
+                }
+                else {
+                    $found | Unregister-ScheduledTask -Confirm:$false -CimSession $servers
+                }
+                write-host "$(Get-Date) - Task: $taskName - Completed and Unregisted on Server: $server"                         
+                
+                # remove server from array of servers
+                $servers = $servers | Where-Object { $_.Address -ne $server }        
+            }
+        }  
+
+        if (-not $minutes % 30) {
+            # print count and server list every 30 minutes
+            write-host "$(Get-Date) - Remaining Servers: $($servers.count) - Minutes Running: $minutes"  
+            write-host $servers 
+        }
+
+        # sleep for 5 minutes and check task state
+        Start-Sleep -Seconds 300
+        $minutes += 5
+    } 
+    # loop until server count is 0 or 15 minutes have passed 
+    while ($servers.count -gt 0 -and (($whileStart).AddHours($waitInHours) -gt (Get-Date)))  
 }
 
 #region binary EXE
@@ -668,6 +716,7 @@ function RunAndInstallCU($mainArgs) {
         start-sleep 3
 
         Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
+        Sendmail -from $from -to $to -subject "SPP_CU Installed" -body (DisplayCA | ConvertTo-Html -Fragment ) -smtphost $smtphost
         Stop-Transcript
         Restart-Computer -Force        
     }
@@ -679,7 +728,7 @@ function RunAndInstallCU($mainArgs) {
 
 }
 
-function Sendmail($from = "", $to = "", $subject = "PS Patchify Notice", $body, $smtphost) {
+function Sendmail($from = "", $to = "", $subject = "SP Patchify Notice", $body, $smtphost) {
 
     $MailMessage = New-Object system.net.mail.mailmessage
     $MailMessage.From = $from
