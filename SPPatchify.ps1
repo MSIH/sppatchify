@@ -1,6 +1,7 @@
 ﻿<#
 .SYNOPSIS
-	Autoamtes the Download and Install of SharePoint CU and then PSconfig
+    Autoamtes the Download and Install of SharePoint CU and then PSconfig
+    
 .DESCRIPTION
     Tool to download and copy SharePoint CU to all servers in Farm
     Install CU to all servers in Farm in parrellel
