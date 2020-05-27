@@ -27,15 +27,15 @@ param (
     
     # send mail
     [Parameter(Mandatory = $False, HelpMessage = 'Email From Address')] 
-    [switch]$from, 
+    [string]$from, 
     [Parameter(Mandatory = $False, HelpMessage = 'Email To Address')] 
-    [switch]$to, 
+    [string]$to, 
     [Parameter(Mandatory = $False, HelpMessage = 'Email Subject')] 
-    [switch]$subject, 
+    [string]$subject, 
     [Parameter(Mandatory = $False, HelpMessage = 'Email Body')] 
-    [switch]$body, 
+    [string]$body, 
     [Parameter(Mandatory = $False, HelpMessage = 'SMTP Host')] 
-    [switch]$smtphost,  
+    [string]$smtphost,  
 
     [Parameter(Mandatory = $False, HelpMessage = 'Use -StartSharePointSearchOnly.')] 
     [switch]$StartSharePointSearchOnly,
@@ -120,6 +120,30 @@ param (
     [switch]$Complete
 )
 
+$ExitIfNoParametes = $true
+# Get the command name
+$CommandName = $PSCmdlet.MyInvocation.InvocationName;
+# Get the list of parameters for the command
+$ParameterList = (Get-Command -Name $CommandName).Parameters;
+
+# Grab each parameter value, using Get-Variable
+foreach ($Parameter in $ParameterList.Values) {
+    $parameterName = (Get-Variable -Name $Parameter.Name -ErrorAction SilentlyContinue) 
+    if ($parameterName.Value) {
+        # write-host "No parameter given: $($foo.Value)" 
+        $ExitIfNoParametes = $false       
+    }       
+}
+
+if ($ExitIfNoParametes) {
+    write-host "No parameter given"
+    exit
+}
+else {
+    write-host "parameter given"
+}
+
+
 # Plugin
 Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
 Import-Module WebAdministration -ErrorAction SilentlyContinue | Out-Null
@@ -131,11 +155,14 @@ $maxattempt = 3
 $maxrebootminutes = 120
 $logFolder = "$root\log"
 
-function Main() {
+
+function Main($parmas) {
     # Clean up
     Get-PSSession | Remove-PSSession -Confirm:$false
 
-    $mainArgs = $args
+
+
+    $mainArgs = $parmas
 
     # what does this do
     If (!(Test-Path -Path $root -PathType Container)) {
@@ -430,7 +457,7 @@ function Main() {
     Get-PSSession | Remove-PSSession -Confirm:$false
 
     # send email notice
-    Sendmail -from $from -to $to -subject "SPP_CU Installed" -body (DisplayCA | ConvertTo-Html -Fragment ) -smtphost $smtphost
+    Sendmail -from $from -to $to -subject $subject -body $body -smtphost $smtphost
 
     # Calculate Duration and Run Cleanup    
     CalcDuration
@@ -696,7 +723,7 @@ function RunAndInstallCU($mainArgs) {
        
         $taskName = "SPP_RunPSconfigAfterReboot"
         $cmd = "%SystemRoot%\system32\WindowsPowerShell\v1.0\powershell.exe"
-        $params = "-ExecutionPolicy Bypass -File ""$root\sppatchify.ps1"" -RunConfigWizard"
+        $params = "-ExecutionPolicy Bypass -File ""$root\sppatchify.ps1"" -RunConfigWizard -from ""$from"" -to ""$to"" -subject ""SPP PSconfig Completed"" -smtphost ""$smtphost"" "
 
         $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
         if ($found) {
@@ -716,7 +743,8 @@ function RunAndInstallCU($mainArgs) {
         start-sleep 3
 
         Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
-        Sendmail -from $from -to $to -subject "SPP_CU Installed" -body (DisplayCA | ConvertTo-Html -Fragment ) -smtphost $smtphost
+        $body = VerifyCUInstalledOnAllServers | ConvertTo-Html -Fragment
+        Sendmail -from $from -to $to -subject "SPP Installed CU" -body $body -smtphost $smtphost
         Stop-Transcript
         Restart-Computer -Force        
     }
@@ -3623,8 +3651,7 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.A
     } while ($data.Count -gt 0)
 
 }
-
-
-Main
+write-host $args
+Main $args
 
 
