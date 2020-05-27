@@ -433,7 +433,7 @@ function Main($parmas) {
     }  
 
     #remove all scheduled tasks
-    $taskName = "SSP_*"
+    $taskName = "SPP_*"
     foreach ($server in getFarmServers) {       
         $addr = $server.Address
         Write-Host "Unregister task $taskName from - $addr" -Fore Green
@@ -505,7 +505,7 @@ function waitForScheduledTask($taskName, $servers, $waitInHours) {
 
         # sleep for 5 minutes and check task state
         Start-Sleep -Seconds 300
-        $minutes += 5
+        $minutes = $minutes + 5
     } 
     # loop until server count is 0 or 15 minutes have passed 
     while ($servers.count -gt 0 -and (($whileStart).AddHours($waitInHours) -gt (Get-Date)))  
@@ -685,8 +685,9 @@ function RunAndInstallCU($mainArgs) {
                 }
             }
 
-            # WaitEXE Watch EXE binary complete
-            WaitEXE $patchName      
+            # WaitEXE Watch EXE binary complete>
+            waitForScheduledTask -taskName $taskName -servers (getFarmServers).Address -waitInHours 2
+            #WaitEXE $patchName      
         }
 
         #delete scheduled task
