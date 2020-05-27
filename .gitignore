@@ -15,4 +15,4 @@
 # End of https://www.gitignore.io/api/visualstudiocode
 media
 log
-run-*
+run-sppatchify.ps1
