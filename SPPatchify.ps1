@@ -94,8 +94,9 @@ param (
     [Parameter(Mandatory = $False, HelpMessage = 'Use -IISStart to stop sharepoint and iis services.')]
     [switch]$IISStart,
 
-    [Parameter(Mandatory = $False, HelpMessage = 'Use -RunAndInstallCU to install SharePoint CU on all Farm servers, then reboot, and run PSconfig on all servers.')]
-    [switch]$RunAndInstallCU,
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -InstallCURebootRunPSconfig to install SharePoint CU on all Farm servers, then reboot, and run PSconfig on all servers.')]
+    [Alias("RunAndInstallCU")]
+    [switch]$InstallCURebootRunPSconfig,
 
     [Parameter(Mandatory = $False, HelpMessage = 'Use -InstallCUOnly to install SharePoint CU on all Farm servers.')]
     [switch]$InstallCUOnly,
@@ -354,7 +355,7 @@ function Main($parmas) {
     } 
 
     # Install CU, reboot servers, run psconfig
-    if ($RunAndInstallCU) {   
+    if ($InstallCURebootRunPSconfig) {   
         # create scheduled task to install CU on all servers
         # create scheduled task to start on reboot to run psconfig on all servers
         # reboots all servers      
