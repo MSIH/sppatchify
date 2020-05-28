@@ -97,6 +97,9 @@ param (
     [Parameter(Mandatory = $False, HelpMessage = 'Use -RunAndInstallCU to install SharePoint CU on all Farm servers, then reboot, and run PSconfig on all servers.')]
     [switch]$RunAndInstallCU,
 
+    [Parameter(Mandatory = $False, HelpMessage = 'Use -InstallCUOnly to install SharePoint CU on all Farm servers.')]
+    [switch]$InstallCUOnly,
+
     [Parameter(Mandatory = $False, HelpMessage = 'Use -DismountContentDatabase to dismount all content databases.')]
     [switch]$DismountContentDatabase,
     [bool] $needsUpdateOnly = $false,
@@ -343,19 +346,19 @@ function Main($parmas) {
         IISStart
     }
 
+    # Install CU and reboot servers
+    if ($InstallCUOnly) {   
+        # create scheduled task to install CU on all servers
+        # reboots all servers   
+        InstallCUOnly
+    } 
 
-    # Run CU, wait for servers to reboot, verify installed on all servers
+    # Install CU, reboot servers, run psconfig
     if ($RunAndInstallCU) {   
-        # create scheduled task to run CU
-        # watch and update web page
-        # uses CredSSP remoting
-        # CopyMedia "Copy"    
-        # PauseSharePointSearch
-        RunAndInstallCU
-              
-        #RunConfigWizard 
-        #StartSharePointSearch
-        #DisplayCA        
+        # create scheduled task to install CU on all servers
+        # create scheduled task to start on reboot to run psconfig on all servers
+        # reboots all servers      
+        InstallCURebootRunPSconfig       
     } 
 
 
@@ -606,9 +609,138 @@ function SafetyEXE() {
     }
 }
 
+function InstallCUOnly($mainArgs) {
+    Write-Host "===== InstallCUOnly ===== $(Get-Date)" -Fore "Yellow"
 
-function RunAndInstallCU($mainArgs) {
-    Write-Host "===== RunAndInstallCU ===== $(Get-Date)" -Fore "Yellow"
+    # Remove MSPLOG
+    Write-Host "===== Remove MSPLOG on ===== $(Get-Date)" -Fore "Yellow"
+    LoopRemoteCmd "Remove MSPLOG on " "Remove-Item '$logfolder\msp\*' -Confirm:`$false -ErrorAction SilentlyContinue" -isJob $true
+
+    # Remove MSPLOG
+    Write-Host "===== Unblock EXE on ===== $(Get-Date)" -Fore "Yellow"
+    LoopRemoteCmd "Unblock EXE on " "gci '$root\media\*' | Unblock-File -Confirm:`$false -ErrorAction SilentlyContinue" -isJob $true
+
+    # Build CMD
+    $files = Get-ChildItem "$root\media\*.exe" -Recurse | Sort-Object Name
+    If ($files) {
+        foreach ($f in $files) {
+            # Display patch name
+            $name = $f.Name
+            Write-Host $name -Fore Yellow
+            $patchName = $name.replace(".exe", "")
+            $cmd = $f.FullName
+            Write-Host "$cmd ===== $(Get-Date)" -Fore "Yellow"
+            $params = "/passive /forcerestart /log:""$root\log\msp\$name.log"""
+            if ($bypass) {
+                $params += " PACKAGE.BYPASS.DETECTION.CHECK=1"
+            }
+            $taskName = "SPP_InstallCU$name"
+
+            # Loop - Run Task Scheduler
+            foreach ($server in getFarmServers) {
+                # Local PC - No reboot
+                $addr = $server.Address
+                Write-Host $addr 
+                # Remove SCHTASK if found
+                $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+                if ($found) {
+                    Write-Host "Register and start SCHTASK - $addr $(Get-Date)" -Fore "Yellow"
+                    $found | Unregister-ScheduledTask -Confirm:$false 
+                    Start-Sleep -Seconds 15 
+                }
+                if ($addr -eq $env:computername) {                    
+ 
+                    # New SCHTASK parameters
+                    $user = "System"
+                    $folder = Split-Path $f
+                    $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder 
+                    $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+
+                    # Create and Start SCHTASK
+                
+                    Write-Host "Register and start SCHTASK - $addr - $cmd $(Get-Date)" -Fore Green
+                    Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -Description "Install SharePoint CU created by SPPatchify Tool" 
+                    Start-ScheduledTask -TaskName $taskName 
+                    Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
+
+                    # Event log START
+                    New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
+                    Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr              
+                }
+                else {
+
+                    # New SCHTASK parameters
+                    $user = "System"
+                    $folder = Split-Path $f
+                    $a = New-ScheduledTaskAction -Execute $cmd -Argument $params -WorkingDirectory $folder -CimSession $addr
+                    $p = New-ScheduledTaskPrincipal -RunLevel Highest -UserId $user -LogonType S4U
+
+                    # Create and start SCHTASK
+                    Write-Host "Register and start SCHTASK - $addr - $cmd" -Fore Green
+                    Register-ScheduledTask -TaskName $taskName -Action $a -Principal $p -CimSession $addr -Description "Install SharePoint CU created by SPPatchify Tool" 
+                    Start-ScheduledTask -TaskName $taskName -CimSession $addr
+                    Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
+
+                    # Event log START
+                    New-EventLog -LogName "Application" -Source "SPPatchify" -ComputerName $addr -ErrorAction SilentlyContinue | Out-Null
+                    Write-EventLog -LogName "Application" -Source "SPPatchify" -EntryType Information -Category 1000 -EventId 1000 -Message "START" -ComputerName $addr            
+                }
+            }
+
+            # WaitEXE Watch EXE binary complete>
+            waitForScheduledTask -taskName $taskName -servers (getFarmServers).Address -waitInHours 2
+            #WaitEXE $patchName      
+        }
+
+        #delete scheduled task
+        # Loop - Run Task Scheduler
+        foreach ($server in getFarmServers) {       
+            $addr = $server.Address
+            Write-Host "Unregister task $taskName from - $addr" -Fore Green
+            if ($addr -eq $env:computername) {              
+                # Remove SCHTASK if found
+                $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
+                if ($found) {
+                    $found | Unregister-ScheduledTask -Confirm:$false 
+                }   
+            }
+            else {
+                # Remove SCHTASK if found
+                $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
+                if ($found) {
+                    $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
+                }
+            }
+        }
+	
+        #  Force Reboot      
+        
+        Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
+        foreach ($server in getRemoteServers) {
+            $addr = $server.Address
+            if ($addr -ne $env:computername) {
+                Write-Host "Reboot $($addr)" -Fore Yellow
+                Restart-Computer -ComputerName $addr -Force
+            }
+        }     
+ 
+        Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
+        $body = VerifyCUInstalledOnAllServers | ConvertTo-Html -Fragment
+        Sendmail -from $from -to $to -subject "SPP Installed CU" -body $body -smtphost $smtphost
+        Stop-Transcript
+        Restart-Computer -Force        
+    }
+    else {
+        write-host "No Install Files Found. Plaese run .\sppatchify.ps1 -downloadMedia"
+        Stop-Transcript
+        exit
+    }
+
+}
+
+
+function InstallCURebootRunPSconfig($mainArgs) {
+    Write-Host "===== InstallCURebootRunPSconfig ===== $(Get-Date)" -Fore "Yellow"
 
     # Remove MSPLOG
     Write-Host "===== Remove MSPLOG on ===== $(Get-Date)" -Fore "Yellow"

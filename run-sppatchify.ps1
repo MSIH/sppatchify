@@ -9,7 +9,7 @@ cd D:\Artifacts\Software\sppatchify #NIMHD
 .\sppatchify.ps1 -downloadMedia -downloadVersion 2013
 
 # step 3 - Copy Media to Servers
-.\sppatchify.ps1 -CopyMedia
+.\sppatchify.ps1 -CopyMedia -smtphost "mailfwd.nih.gov" -from "barry.schneider@nih.gov" -to "bschneider@woodbourne.com" -subject "SPPathify Copy Media to Server"
 
 # step 4 - Stop Search (Option for SP2016/2019)
 # We are no longer doing this for SP2016 and SP2019, as install not taking 5 hours
@@ -18,7 +18,7 @@ cd D:\Artifacts\Software\sppatchify #NIMHD
 # .\sppatchify.ps1 -PauseSharePointSearch
 
 # step 5 - Install CU and Run PSConfig afrer automatic reboot
-.\sppatchify.ps1 -RunAndInstallCU # run parellel
+.\sppatchify.ps1 -RunAndInstallCU -smtphost "mailfwd.nih.gov" -from "barry.schneider@nih.gov" -to "bschneider@woodbourne.com" -subject "SPPathify Copy Media to Server"
 
 
 # other One Off Commands
