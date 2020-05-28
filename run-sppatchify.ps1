@@ -1,7 +1,11 @@
+<#
+
+For NIH see run-NIHspPatchify.ps1
+
+#>
+
 # step 1 - change to SPPatchify Directory
-cd C:\DEPL\Software\sppatchify #NICHD SP2016
-cd D:\DEPL\Software\sppatchify #NICHD SP2013/SP2019
-cd D:\Artifacts\Software\sppatchify #NIMHD
+cd D:\Artifacts\Software\sppatchify
 
 # step 2 - Download Media
 .\sppatchify.ps1 -downloadMedia -downloadVersion 2019
@@ -9,7 +13,7 @@ cd D:\Artifacts\Software\sppatchify #NIMHD
 .\sppatchify.ps1 -downloadMedia -downloadVersion 2013
 
 # step 3 - Copy Media to Servers
-.\sppatchify.ps1 -CopyMedia -smtphost "mailfwd.nih.gov" -from "barry.schneider@nih.gov" -to "bschneider@woodbourne.com" -subject "SPPathify Copy Media to Server"
+.\sppatchify.ps1 -CopyMedia -smtphost "TBD" -from "TBD" -to "TBD" -subject "TBD"
 
 # step 4 - Stop Search (Option for SP2016/2019)
 # We are no longer doing this for SP2016 and SP2019, as install not taking 5 hours
@@ -18,12 +22,12 @@ cd D:\Artifacts\Software\sppatchify #NIMHD
 # .\sppatchify.ps1 -PauseSharePointSearch
 
 # step 5 - Install CU and Run PSConfig afrer automatic reboot
-.\sppatchify.ps1 -RunAndInstallCU -smtphost "mailfwd.nih.gov" -from "barry.schneider@nih.gov" -to "bschneider@woodbourne.com" -subject "SPPathify Copy Media to Server"
+.\sppatchify.ps1 -InstallCURebootRunPSconfig -smtphost "TBD" -from "TBD" -to "TBD" -subject "TBD"
 
 
 # other One Off Commands
-
-.\sppatchify.ps1 -RunConfigWizard
+.\sppatchify.ps1 -InstallCUOnly -smtphost "TBD" -from "TBD" -to "TBD" -subject "TBD"
+.\sppatchify.ps1 -RunConfigWizard -smtphost "TBD" -from "TBD" -to "TBD" -subject "TBD"
 .\sppatchify.ps1 -StartSharePointSearch
 .\sppatchify.ps1 -ClearCacheIni
 .\sppatchify.ps1 -DismountContentDatabase
