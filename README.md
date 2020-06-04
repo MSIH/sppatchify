@@ -1,10 +1,5 @@
 ## Description
-SharePoint Patchify - Apply CU patch to entire farm from one PowerShell console. SWEET!!
-
-[![](https://raw.githubusercontent.com/spjeff/sppatchify/master/doc/download.png)](https://github.com/spjeff/sppatchify/releases/download/v0.129/SPPatchify.zip)
-
-## NOTE
-* May need to run `Enable-PSRemoting` and `Enable-WSManCredSSP -Role Server ` on all farm servers to allow PowerShell remoting before running this script.
+SharePoint Patchify - Apply CU patch to entire farm from one PowerShell console. 
 
 ## Business Challenge
 * Long downtime
@@ -12,7 +7,7 @@ SharePoint Patchify - Apply CU patch to entire farm from one PowerShell console.
 * Inconsistent procedures
 
 ## Technical Solution
-* Supports SharePoint 2010, 2013, and 2016
+* Supports SharePoint 2010, 2013, 2016, 2019
 * Auto detect farm
 * Copy EXE to all servers
 * Stop SharePoint services
@@ -22,22 +17,6 @@ SharePoint Patchify - Apply CU patch to entire farm from one PowerShell console.
 * Start SharePoint services
 * Display Central Admin
 
-## Screenshots
-![image](https://raw.githubusercontent.com/spjeff/sppatchify/master/doc/6.png)
-![image](https://raw.githubusercontent.com/spjeff/sppatchify/master/doc/5.png)
-![image](https://raw.githubusercontent.com/spjeff/sppatchify/master/doc/4.png)
-![image](https://raw.githubusercontent.com/spjeff/sppatchify/master/doc/2.png)
-![image](https://raw.githubusercontent.com/spjeff/sppatchify/master/doc/3.png)
-![image](https://raw.githubusercontent.com/spjeff/sppatchify/master/doc/1.png)
-![image](https://raw.githubusercontent.com/spjeff/sppatchify/master/doc/8.png)
-![image](https://raw.githubusercontent.com/spjeff/sppatchify/master/doc/9.png)
-![image](https://raw.githubusercontent.com/spjeff/sppatchify/master/doc/10.png)
-
-## Contact
-Please drop a line to [@spjeff](https://twitter.com/spjeff) or [spjeff@spjeff.com](mailto:spjeff@spjeff.com)
-Thanks!  =)
-
-![image](http://img.shields.io/badge/first--timers--only-friendly-blue.svg?style=flat-square)
 
 ## License
 
