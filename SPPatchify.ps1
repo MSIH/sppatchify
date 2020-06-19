@@ -445,6 +445,7 @@ function Main($parmas) {
             # Remove SCHTASK if found
             $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
             if ($found) {
+                $found
                 $found | Unregister-ScheduledTask -Confirm:$false 
             }   
         }
@@ -452,6 +453,7 @@ function Main($parmas) {
             # Remove SCHTASK if found
             $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
             if ($found) {
+                $found
                 $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
             }
         } 
@@ -501,7 +503,7 @@ function waitForScheduledTask($taskName, $servers, $waitInHours) {
             }
         }  
 
-        if (-not $minutes % 30) {
+        if (-not ($minutes % 30)) {
             # print count and server list every 30 minutes
             write-host "$(Get-Date) - Remaining Servers: $($servers.count) - Minutes Running: $minutes"  
             write-host $servers 
@@ -509,6 +511,7 @@ function waitForScheduledTask($taskName, $servers, $waitInHours) {
 
         # sleep for 5 minutes and check task state
         Start-Sleep -Seconds 300
+
         $minutes = $minutes + 5
     } 
     # loop until server count is 0 or 15 minutes have passed 
@@ -612,6 +615,7 @@ function SafetyEXE() {
 
 function InstallCUOnly($mainArgs) {
     Write-Host "===== InstallCUOnly ===== $(Get-Date)" -Fore "Yellow"
+    Sendmail -from $from -to $to -subject "SPP Installing CU" -body "Installing CU on all servers." -smtphost $smtphost
 
     # Remove MSPLOG
     Write-Host "===== Remove MSPLOG on ===== $(Get-Date)" -Fore "Yellow"
@@ -702,6 +706,7 @@ function InstallCUOnly($mainArgs) {
                 # Remove SCHTASK if found
                 $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
                 if ($found) {
+                    $found
                     $found | Unregister-ScheduledTask -Confirm:$false 
                 }   
             }
@@ -709,6 +714,7 @@ function InstallCUOnly($mainArgs) {
                 # Remove SCHTASK if found
                 $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
                 if ($found) {
+                    $found
                     $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
                 }
             }
@@ -726,8 +732,7 @@ function InstallCUOnly($mainArgs) {
         }     
  
         Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
-        $body = VerifyCUInstalledOnAllServers | ConvertTo-Html -Fragment
-        Sendmail -from $from -to $to -subject "SPP Installed CU" -body $body -smtphost $smtphost
+        Sendmail -from $from -to $to -subject "SPP Installed CU Complete" -body "CU installed on all of the servers." -smtphost $smtphost
         Stop-Transcript
         Restart-Computer -Force        
     }
@@ -832,6 +837,7 @@ function InstallCURebootRunPSconfig($mainArgs) {
                 # Remove SCHTASK if found
                 $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue 
                 if ($found) {
+                    $found
                     $found | Unregister-ScheduledTask -Confirm:$false 
                 }   
             }
@@ -839,6 +845,7 @@ function InstallCURebootRunPSconfig($mainArgs) {
                 # Remove SCHTASK if found
                 $found = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue -CimSession $addr
                 if ($found) {
+                    $found
                     $found | Unregister-ScheduledTask -Confirm:$false -CimSession $addr
                 }
             }
@@ -877,8 +884,8 @@ function InstallCURebootRunPSconfig($mainArgs) {
         start-sleep 3
 
         Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
-        $body = VerifyCUInstalledOnAllServers | ConvertTo-Html -Fragment
-        Sendmail -from $from -to $to -subject "SPP Installed CU" -body $body -smtphost $smtphost
+        # $body = VerifyCUInstalledOnAllServers | ConvertTo-Html -Fragment
+        Sendmail -from $from -to $to -subject "SPP Installed CU. Rebooting Servers" -body "CU installed on all of the servers. Reboot in progress." -smtphost $smtphost
         Stop-Transcript
         Restart-Computer -Force        
     }
