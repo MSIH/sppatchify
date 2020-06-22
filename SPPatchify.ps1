@@ -693,8 +693,9 @@ function InstallCUOnly($mainArgs) {
             }
 
             # WaitEXE Watch EXE binary complete>
-            waitForScheduledTask -taskName $taskName -servers (getFarmServers).Address -waitInHours 2
-            #WaitEXE $patchName      
+            #waitForScheduledTask -taskName $taskName -servers (getFarmServers).Address -waitInHours 2
+            #WaitEXE $patchName  
+            WaitForProcessToFinish -patchName $patchName    
         }
 
         #delete scheduled task
@@ -721,7 +722,7 @@ function InstallCUOnly($mainArgs) {
         }
 	
         #  Force Reboot      
-        
+        <#
         Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
         foreach ($server in getRemoteServers) {
             $addr = $server.Address
@@ -729,12 +730,14 @@ function InstallCUOnly($mainArgs) {
                 Write-Host "Reboot $($addr)" -Fore Yellow
                 Restart-Computer -ComputerName $addr -Force
             }
-        }     
+        }
+        #>     
  
         Write-Host "Reboot $($env:computername) ===== $(Get-Date)" -Fore Yellow
         Sendmail -from $from -to $to -subject "SPP Installed CU Complete" -body "CU installed on all of the servers." -smtphost $smtphost
         Stop-Transcript
-        Restart-Computer -Force        
+
+        # Restart-Computer -Force        
     }
     else {
         write-host "No Install Files Found. Plaese run .\sppatchify.ps1 -downloadMedia"
@@ -824,8 +827,9 @@ function InstallCURebootRunPSconfig($mainArgs) {
             }
 
             # WaitEXE Watch EXE binary complete>
-            waitForScheduledTask -taskName $taskName -servers (getFarmServers).Address -waitInHours 2
-            #WaitEXE $patchName      
+            # waitForScheduledTask -taskName $taskName -servers (getFarmServers).Address -waitInHours 2
+            #WaitEXE -patchName $patchName -wait
+            WaitForProcessToFinish -patchName $patchName
         }
 
         #delete scheduled task
@@ -1094,13 +1098,17 @@ function WaitEXE($patchName) {
     # Watch binary complete
     $counter = 0
     if (getFarmServers) {
+        write-host "Look thru Farm Servers"
         foreach ($server in getFarmServers) {	
-            # Progress
             $addr = $server.Address
+
+            # Progress 
+            <#           
             $prct = [Math]::Round(($counter / (getFarmServers).Count) * 100)
             if ($prct) {
                 Write-Progress -Activity "Wait EXE ($prct % ) $(Get-Date)" -Status $addr -PercentComplete $prct
             }
+            #>
             $counter++
 
             # Remote Posh
@@ -1109,8 +1117,9 @@ function WaitEXE($patchName) {
             do {
                 # Monitor EXE process
                 $proc = Get-Process -Name $patchName -Computer $addr -ErrorAction SilentlyContinue
+                Write-Host "Each dot is 1 minute"
                 Write-Host "." -NoNewLine
-                Start-Sleep 10
+                Start-Sleep 60
 
                 # Priority (High) from https://gallery.technet.microsoft.com/scriptcenter/Set-the-process-priority-9826a55f
                 $cmd = "`$proc = Get-Process -Name ""$patchName"" -ErrorAction SilentlyContinue; if (`$proc) { if (`$proc.PriorityClass.ToString() -ne ""High"") { `$proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::HIGH } }"
@@ -1122,7 +1131,7 @@ function WaitEXE($patchName) {
                 # Count MSPLOG files
                 $cmd = "`$f=Get-ChildItem ""$logFolder\*MSPLOG*""; `$c=`$f.count; `$l=(`$f | sort last -desc | select -first 1).LastWriteTime; `$s=`$env:computername; New-Object -TypeName PSObject -Prop (@{""Server"" = `$s; ""Count"" = `$c; ""LastWriteTime"" = `$l })"
                 $sb = [Scriptblock]::Create($cmd)
-                InvokeCommand  -ScriptBlock $sb  -server $addr  
+                $result = InvokeCommand  -ScriptBlock $sb  -server $addr  
               
                 $progress = "Server: $($result.Server)  /  MSP Count: $($result.Count)  /  Last Write: $($result.LastWriteTime)"
                 Write-Progress $progress
@@ -1175,6 +1184,55 @@ function WaitEXE($patchName) {
         }
     }
 }
+
+function WaitForProcessToFinish($patchName, $sleep = 300) {
+    Write-Host "===== Wait for Process to Finish ===== $(Get-Date)" -Fore "Yellow"
+	
+    # Wait for EXE intialize
+    Start-Sleep 60
+
+    # create array list of server names. this allows the remove method
+    [System.Collections.ArrayList]$servers = getFarmServers | ForEach-Object { $_.Address }
+    
+    if ($servers) {       
+        $ProcessStartTime = get-date
+      
+        write-host "set process to run with highest priority, to run faster"    
+        foreach ($server in $servers) {	            
+            # Priority (High) from https://gallery.technet.microsoft.com/scriptcenter/Set-the-process-priority-9826a55f
+            $cmd = "`$proc = Get-Process -Name ""$patchName"" -ErrorAction SilentlyContinue; if (`$proc) { if (`$proc.PriorityClass.ToString() -ne ""High"") { `$proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::HIGH } }"
+            $sb = [Scriptblock]::Create($cmd)        
+            InvokeCommand  -ScriptBlock $sb  -server $addr 
+        }
+            
+        write-host "While loop until the process is no longer running on all servers"
+        do {
+            write-host "Loop thru servers"
+            $isProcessRunning = $false
+            foreach ($server in $servers) {	
+                write-host "See if process $patchName is running on server $server"                
+                $process = Get-Process -Name $patchName -Computer $server -ErrorAction SilentlyContinue
+
+                if ($process) {
+                    $isProcessRunning = $true   
+                }
+                else {
+                    write-host "Process $patchName completed on server $server after $(((Get-Date) - $ProcessStartTime).TotalMinutes) minutes and removed from servers array at $(Get-Date)"
+                    $servers.Remove($server)
+                }
+            }
+            if ($isProcessRunning) {
+                Write-host "$patchName running for hh:mm:ss:ms $((Get-Date)-$ProcessStartTime)"            
+                write-host "Check again for running process in $sleep seconds"
+                Start-Sleep $Sleep
+            }
+            
+        } while ($isProcessRunning)
+
+        write-host "Process: $patchName installed on all servers $(Get-Date)"
+    }
+}
+
 
 function WaitReboot() {
     
@@ -1434,27 +1492,26 @@ function InvokeCommand($server, $ScriptBlock, $isJob = $false) {
     if ($ScriptBlock.GetType().Name -eq "String") {
         $ScriptBlock = [ScriptBlock]::Create($ScriptBlock)
     }
-    #write-host "sb.GetType().Name: $($ScriptBlock.GetType().Name)"
-    # write-host "ScriptBlock: $ScriptBlock"
-    $session = GetRemotePSSession $server (GetFarmAccountCredentials)
+       
     if ($env:computername -eq $server -or $server -eq "localhost") {
-
         if ($isJob) {
+            write-host "Run powershell on local server and do not wait to finish (run in background as Job)"
             Start-Job -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
         }
         else {
-            #Start-Job -ScriptBlock $ScriptBlock -Credential (GetFarmAccountCredentials)
-            Invoke-Command -Session $Session -ScriptBlock $ScriptBlock 
-            #Start-Process -FilePath Powershell -Credential (GetFarmAccountCredentials) -Wait -ArgumentList '-Command', $ScriptBlock 
+            write-host "Run powershell command on local server and wait to finish                                 "
+            Invoke-Command -ScriptBlock $ScriptBlock 
         }
     }
     else {
-        
+        $session = GetRemotePSSession $server (GetFarmAccountCredentials)    
         if ($session) {
             if ($isJob) {
+                write-host "Run powershell on remote server and do not wait to finish (run in background as Job)"
                 Invoke-Command  -ScriptBlock $ScriptBlock -AsJob -Session $session
             }
             else {
+                write-host "Run powershell on remote server and wait to finish"
                 Invoke-Command  -ScriptBlock $ScriptBlock -Session $session
             }
         }
