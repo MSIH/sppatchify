@@ -1192,7 +1192,7 @@ function WaitForProcessToFinish($patchName, $sleep = 300) {
     Start-Sleep 60
 
     # create array list of server names. this allows the remove method
-    [System.Collections.ArrayList]$servers = getFarmServers | ForEach-Object { $_.Address }
+    [System.Collections.ArrayList]$servers = @(getFarmServers | ForEach-Object { $_.Address })
     
     if ($servers) {       
         $ProcessStartTime = get-date
@@ -1207,9 +1207,10 @@ function WaitForProcessToFinish($patchName, $sleep = 300) {
             
         write-host "While loop until the process is no longer running on all servers"
         do {
-            write-host "Loop thru servers"
+            write-host "Loop thru remaining $($servers.Count) servers $(Get-Date)"
             $isProcessRunning = $false
-            foreach ($server in $servers) {	
+            for ($i = 0; $i -lt $servers.Count; $i++) {
+                $server = $servers[$i]
                 write-host "See if process $patchName is running on server $server"                
                 $process = Get-Process -Name $patchName -Computer $server -ErrorAction SilentlyContinue
 
