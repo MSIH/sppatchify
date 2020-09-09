@@ -1221,17 +1221,20 @@ function WaitForProcessToFinish($patchName, $sleep = 300) {
             
         write-host "While loop until the process is no longer running on all servers"
         do {
+            $serverStatic = $servers | ForEach-Object {"$($_)"}
             write-host "Loop thru remaining $($servers.Count) servers $(Get-Date)"
             $isProcessRunning = $false
-            for ($i = 0; $i -lt $servers.Count; $i++) {
-                $server = $servers[$i]
-                write-host "See if process $patchName is running on server $server"                
+            for ($i = 0; $i -lt $serverStatic.Count; $i++) {
+                $server = $serverStatic[$i]
+                write-host "See if process $patchName is running on server $server :" -NoNewline               
                 $process = Get-Process -Name $patchName -Computer $server -ErrorAction SilentlyContinue
 
                 if ($process) {
                     $isProcessRunning = $true   
+                    write-host "--Yes--" 
                 }
                 else {
+                    write-host "--No--" 
                     write-host "Process $patchName completed on server $server after $(((Get-Date) - $ProcessStartTime).TotalMinutes) minutes and removed from servers array at $(Get-Date)"
                     $servers.Remove($server)
                 }
