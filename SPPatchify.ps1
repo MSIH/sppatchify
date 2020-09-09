@@ -375,10 +375,12 @@ function Main($parmas) {
         # Run PSconfigure on all servers
         # uses CredSSP remoting    
         #RunConfigWizard
+       
         RunPSconfig
         StartSharePointSearch
         VerifyCUInstalledOnAllServers
         DisplayCA
+        
     } 
 
     if ($MountContentDatabase) {  
@@ -438,7 +440,7 @@ function Main($parmas) {
 
     #remove all scheduled tasks
     $taskName = "SPP_*"
-    foreach ($server in getFarmServers) {       
+    foreach ($server in (getFarmServers)) {       
         $addr = $server.Address
         Write-Host "Unregister task $taskName from - $addr" -Fore Green
         if ($addr -eq $env:computername) {              
@@ -463,10 +465,21 @@ function Main($parmas) {
     Get-PSSession | Remove-PSSession -Confirm:$false
 
     # send email notice
-    Sendmail -from $from -to $to -subject $subject -body $body -smtphost $smtphost
+    #Sendmail -from $from -to $to -subject $subject -body $body -smtphost $smtphost
 
     # Calculate Duration and Run Cleanup    
     CalcDuration
+
+    # send email notice
+    $File = Get-Content $logFile 
+    $FileLine = @()
+    Foreach ($Line in $File) {
+        $MyObject = New-Object -TypeName PSObject
+        Add-Member -InputObject $MyObject -Type NoteProperty -Name html -Value $Line
+        $FileLine += $MyObject
+    }
+    $body = $FileLine | ConvertTo-Html -Property html
+    Sendmail -from $from -to $to -subject $subject -body $body -smtphost $smtphost
   
     Write-Host "DONE ===$(Get-Date)"
     Stop-Transcript
@@ -929,7 +942,7 @@ function RunPSconfig() {
         $found | Unregister-ScheduledTask -Confirm:$false 
     }
  
-
+ 
     Write-Host " RunPSconfig ===== $(Get-Date)" -Fore "Yellow"
        
     $taskName = "SPP_RunPSconfig"
@@ -985,6 +998,7 @@ function RunPSconfig() {
             Start-ScheduledTask -TaskName $taskName -CimSession $addr
             Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
         }
+
         do {
   
             if ($addr -eq $env:computername) {
@@ -999,7 +1013,7 @@ function RunPSconfig() {
         }  
         while ($taskStatus)
     }  
-    
+         
     #delete scheduled tasks
     $taskName = "SPP_RunPSconfig"
     foreach ($server in getFarmServers) {
@@ -1865,7 +1879,14 @@ function getRemoteServers() {
 }
 
 function getFarmServers() {
-    return Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
+    $servers = @()     
+    foreach ($productServer in (Get-SPProduct).Servers) {
+        $server = '' | Select-Object Address
+        $server.Address = $productServer.ServerName
+        $servers += $server
+    }
+        
+    return $servers    
 }
 
 function EnablePSRemoting() {
