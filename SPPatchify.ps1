@@ -377,8 +377,11 @@ function Main($parmas) {
         #RunConfigWizard
        
         RunPSconfig
+    
         StartSharePointSearch
+   
         VerifyCUInstalledOnAllServers
+       
         DisplayCA
         
     } 
@@ -439,6 +442,7 @@ function Main($parmas) {
     }  
 
     #remove all scheduled tasks
+
     $taskName = "SPP_*"
     foreach ($server in (getFarmServers)) {       
         $addr = $server.Address
@@ -868,8 +872,7 @@ function InstallCURebootRunPSconfig($mainArgs) {
             }
         }
 	
-        #  Force Reboot      
-        
+        #  Force Reboot              
         Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
         foreach ($server in getRemoteServers) {
             $addr = $server.Address
@@ -1221,7 +1224,7 @@ function WaitForProcessToFinish($patchName, $sleep = 300) {
             
         write-host "While loop until the process is no longer running on all servers"
         do {
-            $serverStatic = $servers | ForEach-Object {"$($_)"}
+            $serverStatic = $servers | ForEach-Object { "$($_)" }
             write-host "Loop thru remaining $($servers.Count) servers $(Get-Date)"
             $isProcessRunning = $false
             for ($i = 0; $i -lt $serverStatic.Count; $i++) {
@@ -1882,14 +1885,16 @@ function getRemoteServers() {
 }
 
 function getFarmServers() {
+    # return Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
     $servers = @()     
     foreach ($productServer in (Get-SPProduct).Servers) {
         $server = '' | Select-Object Address
         $server.Address = $productServer.ServerName
         $servers += $server
     }
-        
-    return $servers    
+          
+    return $servers
+    
 }
 
 function EnablePSRemoting() {
@@ -3876,5 +3881,3 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.A
 }
 write-host $args
 Main $args
-
-
