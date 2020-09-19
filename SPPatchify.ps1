@@ -376,14 +376,8 @@ function Main($parmas) {
         # uses CredSSP remoting    
         #RunConfigWizard
        
-        RunPSconfig
-    
-        StartSharePointSearch
-   
-        VerifyCUInstalledOnAllServers
-       
-        DisplayCA
-        
+        RunPSconfig    
+        StartSharePointSearch               
     } 
 
     if ($MountContentDatabase) {  
@@ -468,8 +462,11 @@ function Main($parmas) {
     # remove all pssession
     Get-PSSession | Remove-PSSession -Confirm:$false
 
-    # send email notice
-    #Sendmail -from $from -to $to -subject $subject -body $body -smtphost $smtphost
+    # Display Database Status and Version
+    ShowVersion
+
+    # Upgrade Action Status of Servers
+    VerifyCUInstalledOnAllServers
 
     # Calculate Duration and Run Cleanup    
     CalcDuration
@@ -631,15 +628,16 @@ function SafetyEXE() {
 }
 
 function InstallCUOnly($mainArgs) {
-    Write-Host "===== InstallCUOnly ===== $(Get-Date)" -Fore "Yellow"
+    $startTime = Get-Date
+    Write-Host "===== InstallCUOnly ===== $($startTime )" -Fore "Yellow"
     Sendmail -from $from -to $to -subject "SPP Installing CU" -body "Installing CU on all servers." -smtphost $smtphost
 
     # Remove MSPLOG
-    Write-Host "===== Remove MSPLOG on ===== $(Get-Date)" -Fore "Yellow"
+    Write-Host "===== Remove MSPLOG on ===== $($startTime )" -Fore "Yellow"
     LoopRemoteCmd "Remove MSPLOG on " "Remove-Item '$logfolder\msp\*' -Confirm:`$false -ErrorAction SilentlyContinue" -isJob $true
 
     # Remove MSPLOG
-    Write-Host "===== Unblock EXE on ===== $(Get-Date)" -Fore "Yellow"
+    Write-Host "===== Unblock EXE on ===== $($startTime )" -Fore "Yellow"
     LoopRemoteCmd "Unblock EXE on " "gci '$root\media\*' | Unblock-File -Confirm:`$false -ErrorAction SilentlyContinue" -isJob $true
 
     # Build CMD
@@ -715,6 +713,9 @@ function InstallCUOnly($mainArgs) {
             WaitForProcessToFinish -patchName $patchName    
         }
 
+        $endTime = Get-Date
+        write-host "CU install time too: $($startTime-$endTime) (hh:mm:ss:ms)"
+
         #delete scheduled task
         # Loop - Run Task Scheduler
         foreach ($server in getFarmServers) {       
@@ -767,6 +768,8 @@ function InstallCUOnly($mainArgs) {
 
 function InstallCURebootRunPSconfig($mainArgs) {
     Write-Host "===== InstallCURebootRunPSconfig ===== $(Get-Date)" -Fore "Yellow"
+
+    $startTime = Get-Date
 
     # Remove MSPLOG
     Write-Host "===== Remove MSPLOG on ===== $(Get-Date)" -Fore "Yellow"
@@ -871,7 +874,10 @@ function InstallCURebootRunPSconfig($mainArgs) {
                 }
             }
         }
-	
+    
+        $endTime = Get-Date
+        write-host "CU install time too: $($startTime-$endTime) (hh:mm:ss:ms)"
+
         #  Force Reboot              
         Write-Host "Force Reboot ===== $(Get-Date)" -Fore "Yellow"
         foreach ($server in getRemoteServers) {
@@ -1002,6 +1008,7 @@ function RunPSconfig() {
             Write-Host "Start SCHTASK $addr ===== $(Get-Date)" -Fore "Yellow"
         }
 
+        $startTime = Get-Date
         do {
   
             if ($addr -eq $env:computername) {
@@ -1010,8 +1017,9 @@ function RunPSconfig() {
             else {
                 $taskStatus = (Get-ScheduledTask -TaskName $taskName -CimSession $addr).State -ne 'Ready'
             }
-
-            Write-Host "." -NoNewLine
+            $runningTime = Get-Date
+            $runTime = $runningTime - $startTime
+            Write-Host "As of $runningTime : Running for $runTime (hh:mm:ss:ms)"
             Start-Sleep 60
         }  
         while ($taskStatus)
@@ -1038,7 +1046,7 @@ function RunPSconfig() {
         }
     }
     # restart IIS and app pools on all servers
-    IISStart     
+    # IISStart     
 }
     
 function CreateScheduleTask($addr, $cmd, $params, $taskName, $user, $password, $descirption, $wait = $false) {
@@ -1999,7 +2007,8 @@ function ReadIISPW {
 }
 
 function DisplayCA() {
-    # Version DLL File
+    <# Not sure what this does 
+    Version DLL File
     $sb = {
         ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
         Add-PSSnapIn Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null;
@@ -2007,9 +2016,9 @@ function DisplayCA() {
         [System.Diagnostics.FileVersionInfo]::GetVersionInfo("C:\Program Files\Common Files\microsoft shared\Web Server Extensions\$ver\ISAPI\Microsoft.SharePoint.dll") | Select-Object FileVersion, @{N = 'PC'; E = { $env:computername } }
     }
     LoopRemoteCmd "Get file version on " $sb
+    #>
 	
-    # Display Version
-    ShowVersion
+    
 	
     # Open Central Admin
     $ca = (Get-SPWebApplication -IncludeCentralAdministration) | Where-Object { $_.IsAdministrationWebApplication -eq $true }
@@ -2034,8 +2043,8 @@ function ShowVersion() {
 
     # Control Panel Add/Remove Programs
     
-	
-    # IIS UP/DOWN Load Balancer
+	# not sure what this does
+    <# IIS UP/DOWN Load Balancer
     Write-Host "IIS UP/DOWN Load Balancer"
     $coll = @()
     getFarmServers | ForEach-Object {
@@ -2052,6 +2061,7 @@ function ShowVersion() {
         }
     }
     $coll | Format-Table -AutoSize
+    #>
 
     # Database table
     $d = Get-SPWebapplication -IncludeCentralAdministration | Get-SPContentDatabase 
@@ -2061,13 +2071,11 @@ function ShowVersion() {
     $d | Group-Object NeedsUpgrade | Format-Table -AutoSize
     "---"
 	
-    # Server status table
-    (Get-SPProduct).Servers | Select-Object Servername, InstallStatus -Unique | Group-Object InstallStatus, Servername | Sort-Object Name | Format-Table -AutoSize
-	
-    # Server status summary
-    (Get-SPProduct).Servers | Select-Object Servername, InstallStatus -Unique | Group-Object InstallStatus | Sort-Object Name | Format-Table -AutoSize
-
-    # Display data
+    <# Server status table
+    (Get-SPProduct).Servers | Select-Object Servername, InstallStatus -Unique | Sort-Object Name | Format-Table -AutoSize
+    #>
+    
+     # Display data
     if ($maxv -eq $f.BuildVersion) {
         Write-Host "Max Product = $maxv" -Fore Green
         Write-Host "Farm Build  = $($f.BuildVersion)" -Fore Green
