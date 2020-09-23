@@ -139,13 +139,7 @@ foreach ($Parameter in $ParameterList.Values) {
     }       
 }
 
-if ($ExitIfNoParametes) {
-    write-host "No parameter given"
-    exit
-}
-else {
-    write-host "parameter given"
-}
+
 
 
 # Plugin
@@ -1227,16 +1221,26 @@ function WaitForProcessToFinish($patchName, $sleep = 300) {
             # Priority (High) from https://gallery.technet.microsoft.com/scriptcenter/Set-the-process-priority-9826a55f
             $cmd = "`$proc = Get-Process -Name ""$patchName"" -ErrorAction SilentlyContinue; if (`$proc) { if (`$proc.PriorityClass.ToString() -ne ""High"") { `$proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::HIGH } }"
             $sb = [Scriptblock]::Create($cmd)        
-            InvokeCommand  -ScriptBlock $sb  -server $addr 
+            InvokeCommand  -ScriptBlock $sb  -server $server
         }
             
         write-host "While loop until the process is no longer running on all servers"
+        $serverStatic = @()
         do {
             $serverStatic = $servers | ForEach-Object { "$($_)" }
+            write-host "serverStatic , $serverStatic "
             write-host "Loop thru remaining $($servers.Count) servers $(Get-Date)"
             $isProcessRunning = $false
             for ($i = 0; $i -lt $serverStatic.Count; $i++) {
-                $server = $serverStatic[$i]
+                write-host "i , $i "
+                write-host "serverStatic[i] , $serverStatic[$i] "
+                if ($serverStatic.Count -eq 1) {
+                    $server = $serverStatic
+                }
+                else {
+                    $server = $serverStatic[$i]
+                }
+                write-host "server , $server "
                 write-host "See if process $patchName is running on server $server :" -NoNewline               
                 $process = Get-Process -Name $patchName -Computer $server -ErrorAction SilentlyContinue
 
@@ -1475,12 +1479,13 @@ function LoopRemoteCmd($msg, $cmd, $isJob = $false) {
         }
 	
         # Progress
+        $counter++  
         $addr = $server.Address
-        $prct = [Math]::Round(($counter / (getFarmServers).Count) * 100)
+        $prct = [Math]::Round(($counter / (getFarmServers).Address.Count) * 100)
         if ($prct) {
             Write-Progress -Activity $msg -Status "$addr ($prct %) $(Get-Date)" -PercentComplete $prct
         }
-        $counter++        
+            
 
         # Merge script block array
         $mergeSb = $sb
@@ -2043,7 +2048,7 @@ function ShowVersion() {
 
     # Control Panel Add/Remove Programs
     
-	# not sure what this does
+    # not sure what this does
     <# IIS UP/DOWN Load Balancer
     Write-Host "IIS UP/DOWN Load Balancer"
     $coll = @()
@@ -2075,7 +2080,7 @@ function ShowVersion() {
     (Get-SPProduct).Servers | Select-Object Servername, InstallStatus -Unique | Sort-Object Name | Format-Table -AutoSize
     #>
     
-     # Display data
+    # Display data
     if ($maxv -eq $f.BuildVersion) {
         Write-Host "Max Product = $maxv" -Fore Green
         Write-Host "Farm Build  = $($f.BuildVersion)" -Fore Green
@@ -3886,6 +3891,14 @@ function DistributedJobs($scriptBlocks, [string[]]$servers, [System.Management.A
         Start-Sleep -Seconds 10
     } while ($data.Count -gt 0)
 
+}
+
+if ($ExitIfNoParametes) {
+    write-host "No parameter given"
+    exit
+}
+else {
+    write-host "parameter given"
 }
 write-host $args
 Main $args
