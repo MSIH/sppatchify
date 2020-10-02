@@ -1,4 +1,4 @@
-﻿<#
+﻿<# ver 20201002.07.53 (Date and Time of Comment)
 .SYNOPSIS
     Autoamtes the Download and Install of SharePoint CU and then PSconfig
     
