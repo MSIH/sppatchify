@@ -561,14 +561,7 @@ function CopyMedia($action = "Copy") {
     $counter = 0
     do {
         foreach ($server in getRemoteServers) {
-            # Progress
-            if (Get-Job) {
-                $prct = [Math]::Round(($counter / (Get-Job).Count) * 100)
-                if ($prct) {
-                    Write-Progress -Activity "Copy EXE ($prct %) $(Get-Date)" -Status $addr -PercentComplete $prct -ErrorAction SilentlyContinue
-                }
-            }
-
+            
             # Check Job Status
             Get-Job | Format-Table -AutoSize
         }
@@ -1121,13 +1114,6 @@ function WaitEXE($patchName) {
         foreach ($server in getFarmServers) {	
             $addr = $server.Address
 
-            # Progress 
-            <#           
-            $prct = [Math]::Round(($counter / (getFarmServers).Count) * 100)
-            if ($prct) {
-                Write-Progress -Activity "Wait EXE ($prct % ) $(Get-Date)" -Status $addr -PercentComplete $prct
-            }
-            #>
             $counter++
 
             # Remote Posh
@@ -1285,10 +1271,7 @@ function WaitReboot() {
         $addr = $server.Address
         Write-Host $addr -Fore Yellow
         if ($addr -ne $env:COMPUTERNAME) {
-            $prct = [Math]::Round(($counter / (getFarmServers).Count) * 100)
-            if ($prct) {
-                Write-Progress -Activity "Waiting for machine ($prct %) $(Get-Date)" -Status $addr -PercentComplete $prct
-            }
+          
             $counter++
 		
             # Remote PowerShell session
@@ -1381,13 +1364,8 @@ function LoopRemotePatch($msg, $cmd, $params) {
         }
         else {
             $sb = $cmd
-        }
-	
-        # Progress
-        $prct = [Math]::Round(($counter / (getFarmServers).Count) * 100)
-        if ($prct) {
-            Write-Progress -Activity $msg -Status "$addr ($prct %) $(Get-Date)" -PercentComplete $prct
-        }
+        }	
+      
         $counter++
 		
         # Remote Posh
@@ -1481,12 +1459,7 @@ function LoopRemoteCmd($msg, $cmd, $isJob = $false) {
         # Progress
         $counter++  
         $addr = $server.Address
-        $prct = [Math]::Round(($counter / (getFarmServers).Address.Count) * 100)
-        if ($prct) {
-            Write-Progress -Activity $msg -Status "$addr ($prct %) $(Get-Date)" -PercentComplete $prct
-        }
-            
-
+  
         # Merge script block array
         $mergeSb = $sb
         $mergeCmd = ""
@@ -1810,12 +1783,7 @@ function DistributedJobs2($scriptBlocks, [string[]]$servers, [int]$maxJobs = 1, 
         Write-Host "Starting job for $avaialableServer"
         InvokeCommand -server $avaialableServer -ScriptBlock $scriptBlock -isJob $true                
         
-        # Progress
-        $prct = [Math]::Round(($counter / $scriptBlocks.Count) * 100)
-        if ($prct) {
-            Write-Progress -Activity "Jobs" -Status "($prct %) $(Get-Date)" -PercentComplete $prct
-        }
-        $counter++
+           $counter++
     }
 
     # Wait for all jobs to complete and results ready to be received
@@ -1893,17 +1861,33 @@ function ChangeContent($state) {
 #endregion
 
 #region general
+$getRemoteServers = @()
 function getRemoteServers() {
-    return getFarmServers | Where-Object { $_.Address -ne $env:computername }
+    if (-not $getRemoteServers) {
+        $servers = @() 
+        $servers = getFarmServers | Where-Object { $_.Address -ne $env:computername }
+        $getRemoteServers = $servers       
+    }
+    else {
+        $servers = $getRemoteServers
+    }
+    return $servers
 }
 
+$getFarmServers = @()
 function getFarmServers() {
     # return Get-SPServer | Where-Object { $_.Role -ne "Invalid" } | Sort-Object Address
-    $servers = @()     
-    foreach ($productServer in (Get-SPProduct).Servers) {
-        $server = '' | Select-Object Address
-        $server.Address = $productServer.ServerName
-        $servers += $server
+    if (-not $getFarmServers) {
+        $servers = @()     
+        foreach ($productServer in (Get-SPProduct).Servers) {
+            $server = '' | Select-Object Address
+            $server.Address = $productServer.ServerName
+            $servers += $server
+        }
+        $getFarmServers = $servers
+    }
+    else {
+        $servers = $getFarmServers
     }
           
     return $servers
@@ -2220,16 +2204,7 @@ function UpgradeContent() {
                     $row.Status = "InProgress"
                 }
 				
-                # Progress
-                $counter = ($track | Where-Object { $_.Status -eq "Completed" }).Count
-                $prct = 0
-                if ($track) {
-                    $prct = [Math]::Round(($counter / $track.Count) * 100)
-                }
-                if ($prct) {
-                    Write-Progress -Activity "Upgrade database" -Status "$name ($prct %) $(Get-Date)" -PercentComplete $prct
-                }
-                $track | Format-Table -AutoSize
+                
             }
         }
 
